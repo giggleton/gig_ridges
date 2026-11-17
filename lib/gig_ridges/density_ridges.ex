@@ -82,31 +82,36 @@ defmodule GigRidges.DensityRidges do
           ]
         )
 
-      densities =
+      estimates =
         groups
         |> DataFrame.split(:panel)
         |> Enum.sort()
-        |> Enum.flat_map(fn {panel, rows} -> panel_densities(stat, panel, rows) end)
+        |> Enum.flat_map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
 
       spacing = spacing(DataFrame.pull(groups, :y))
-      greatest = densities |> Enum.map(fn row -> row.density end) |> Enum.max(fn -> 0.0 end)
 
-      computed =
-        DataFrame.new(
-          panel: Enum.map(densities, fn row -> row.panel end),
-          group: Enum.map(densities, fn row -> row.group end),
-          x: Enum.map(densities, fn row -> row.x end),
-          density: Enum.map(densities, fn row -> row.density end),
-          ndensity: Enum.map(densities, fn row -> row.ndensity end),
-          height: Enum.map(densities, fn row -> scaled(row.density, greatest, spacing) end)
+      greatest =
+        estimates
+        |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
+        |> Enum.max(fn -> 0.0 end)
+
+      estimates
+      |> Enum.map(fn {rows, index, places, densities} ->
+        peak = Enum.max(densities)
+
+        group_frame(rows, List.duplicate(index, length(places)), carried,
+          x: places,
+          density: densities,
+          ndensity: Enum.map(densities, fn density -> share(density, peak) end),
+          height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
         )
-
-      carried_columns = DataFrame.select(groups, Enum.map(carried, fn name -> {name, name} end))
-      DataFrame.join(computed, carried_columns, [:panel, :group])
+      end)
+      |> joined(groups, carried)
     end
 
-    # Each group's density at the panel's places, its bandwidth shared by the panel's groups.
-    defp panel_densities(stat, panel, rows) do
+    # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
+    # panel's rows, the group's index among them, the places and the densities there.
+    defp panel_estimates(stat, rows) do
       samples = DataFrame.pull(rows, :xs)
       pooled = Enum.concat(samples)
       width = bandwidth(stat.bandwidth, pooled)
@@ -114,24 +119,33 @@ defmodule GigRidges.DensityRidges do
       {low, high} = span
       places = KernelDensity.places(low, high, @places)
 
-      rows
-      |> DataFrame.pull(:group)
-      |> Enum.zip_with(samples, fn group, values ->
-        estimates = KernelDensity.estimate(values, width, span, @places)
-        peak = Enum.max(estimates)
+      samples
+      |> Enum.with_index()
+      |> Enum.map(fn {values, index} ->
+        {rows, index, places, KernelDensity.estimate(values, width, span, @places)}
+      end)
+    end
 
-        Enum.zip_with(places, estimates, fn place, density ->
-          %{
-            panel: panel,
-            group: group,
-            x: place,
-            density: density,
-            ndensity: if(peak > 0, do: density / peak, else: 0.0)
-          }
+    # A group's rows: its carried columns repeated once per place, beside the columns computed.
+    defp group_frame(rows, indices, carried, computed) do
+      rows
+      |> DataFrame.slice(indices)
+      |> DataFrame.select(Enum.map(carried, fn name -> {name, name} end))
+      |> then(fn frame ->
+        Enum.reduce(computed, frame, fn {name, values}, built ->
+          DataFrame.put(built, name, values)
         end)
       end)
-      |> Enum.concat()
     end
+
+    # The groups' rows end to end; a layer of no groups has none, in the columns it would have.
+    defp joined([], groups, carried),
+      do: group_frame(groups, [], carried, x: [], density: [], ndensity: [], height: [])
+
+    defp joined(frames, _groups, _carried), do: DataFrame.concat_rows(frames)
+
+    defp share(density, peak) when peak > 0, do: density / peak
+    defp share(_density, _peak), do: 0.0
 
     defp bandwidth(width, _values) when is_float(width), do: width
 
