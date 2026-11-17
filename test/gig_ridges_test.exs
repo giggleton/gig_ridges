@@ -76,8 +76,8 @@ defmodule GigRidgesTest do
 
     # R 4.6.1's `density()` of mpg's compact class, `bw.nrd0()` of every class's `hwy` together,
     # read from three bandwidths below the least to three above the greatest at 512 places: its
-    # greatest density 0.120064561783484, at 27.1205568390837. R bins its rows first, so an exact
-    # sum agrees to within a thousandth of the peak.
+    # greatest density 0.120064561783484, at 27.1205568390837, and its 1st, 100th, 256th, 400th
+    # and 512th values.
     test "estimates each group's density with the bandwidth of every group's rows together", %{
       plot: plot
     } do
@@ -95,8 +95,20 @@ defmodule GigRidgesTest do
       peak = Enum.max(densities)
       place = Enum.at(DataFrame.pull(compact, :x), Enum.find_index(densities, &(&1 == peak)))
 
-      assert_in_delta peak, 0.120064561783484, 1.2e-4
+      assert_in_delta peak, 0.120064561783484, 1.0e-12
       assert_in_delta place, 27.1205568390837, 1.0e-9
+
+      expected = [
+        0.0,
+        2.19328222641197e-07,
+        0.11741783853665,
+        0.00176170874127846,
+        5.27686215448223e-05
+      ]
+
+      got = Enum.map([0, 99, 255, 399, 511], fn index -> Enum.at(densities, index) end)
+
+      Enum.zip_with(got, expected, fn value, wanted -> assert_in_delta value, wanted, 1.0e-12 end)
     end
 
     test "scales the layer's greatest density to the spacing between baselines", %{plot: plot} do

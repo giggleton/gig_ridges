@@ -6,8 +6,9 @@ defmodule GigRidges.DensityRidges do
   Per panel, the bandwidth is the one given, or else worked out from the panel's rows together by
   Silverman's rule, R's `bw.nrd0()`: 0.9 times the lesser of the standard deviation and the
   interquartile range over 1.34, times the number of rows to the power of minus one fifth. Each
-  group's density is the normal kernel's, read at 512 places evenly across the panel's rows,
-  reaching three bandwidths beyond them, as R's `density()` reaches by default.
+  group's density is the normal kernel's, estimated as R's `density()` estimates one and read at
+  512 places evenly across the panel's rows, reaching three bandwidths beyond them
+  (`GigRidges.KernelDensity`), so its values are R's to within round-off.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density scaled so the layer's greatest reaches the spacing
@@ -63,6 +64,7 @@ defmodule GigRidges.DensityRidges do
   defimpl Giggly.Stat, for: __MODULE__ do
     alias Giggly.DataFrame
     alias Giggly.Stat.Carry
+    alias GigRidges.KernelDensity
 
     @places 512
 
@@ -108,13 +110,14 @@ defmodule GigRidges.DensityRidges do
       samples = DataFrame.pull(rows, :xs)
       pooled = Enum.concat(samples)
       width = bandwidth(stat.bandwidth, pooled)
-      {low, high} = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
-      places = for index <- 0..(@places - 1), do: low + (high - low) * index / (@places - 1)
+      span = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
+      {low, high} = span
+      places = KernelDensity.places(low, high, @places)
 
       rows
       |> DataFrame.pull(:group)
       |> Enum.zip_with(samples, fn group, values ->
-        estimates = Enum.map(places, fn place -> estimate(place, values, width) end)
+        estimates = KernelDensity.estimate(values, width, span, @places)
         peak = Enum.max(estimates)
 
         Enum.zip_with(places, estimates, fn place, density ->
@@ -128,17 +131,6 @@ defmodule GigRidges.DensityRidges do
         end)
       end)
       |> Enum.concat()
-    end
-
-    # The normal kernel's density estimate at `place` from `values`, `width` wide.
-    defp estimate(place, values, width) do
-      total =
-        Enum.reduce(values, 0.0, fn value, sum ->
-          distance = (place - value) / width
-          sum + :math.exp(-distance * distance / 2)
-        end)
-
-      total / (length(values) * width * :math.sqrt(2 * :math.pi()))
     end
 
     defp bandwidth(width, _values) when is_float(width), do: width

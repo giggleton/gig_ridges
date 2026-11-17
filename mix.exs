@@ -28,6 +28,7 @@ defmodule GigRidges.MixProject do
   defp deps do
     [
       {:giggly, path: "/home/srowley/repos/giggly/.claude/worktrees/next-increment-cf41fe"},
+      {:nx, "~> 1.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
