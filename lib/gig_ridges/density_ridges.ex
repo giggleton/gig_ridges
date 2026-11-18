@@ -16,13 +16,17 @@ defmodule GigRidges.DensityRidges do
   value within it are carried.
   """
 
-  use Giggly.Stat.Facts
+  use Giggly.Stat
+
+  alias Giggly.DataFrame
+  alias Giggly.Stat.Carry
+  alias GigRidges.KernelDensity
 
   defstruct bandwidth: :nrd0
 
   @type t :: %__MODULE__{bandwidth: :nrd0 | float()}
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def options do
     [
       bandwidth: [
@@ -35,22 +39,22 @@ defmodule GigRidges.DensityRidges do
     ]
   end
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def accepted_aesthetics(_stat), do: [:x, :y, :group]
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def required_aesthetics(_stat), do: [:x, :y]
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def written_aesthetics(_stat), do: [:x, :height]
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def default_mapping(_stat), do: %{height: :height}
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def computed_variables(_stat), do: [:density, :ndensity, :height]
 
-  @impl Giggly.Stat.Facts
+  @impl Giggly.Stat
   def numeric_aesthetics(_stat), do: [x: "each group's density is estimated along it"]
 
   @doc false
@@ -61,137 +65,132 @@ defmodule GigRidges.DensityRidges do
   def validate_bandwidth(other),
     do: {:error, "expected a number above 0 or :nrd0, got: #{inspect(other)}"}
 
-  defimpl Giggly.Stat, for: __MODULE__ do
-    alias Giggly.DataFrame
-    alias Giggly.Stat.Carry
-    alias GigRidges.KernelDensity
+  @places 512
 
-    @places 512
+  @impl Giggly.Stat
+  def compute_layer(stat, frame, _axes) do
+    finite = DataFrame.filter(frame, {:and, [{:is_finite, [:x]}, {:is_finite, [:y]}]})
+    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x])
 
-    def compute_layer(stat, frame, _axes) do
-      finite = DataFrame.filter(frame, {:and, [{:is_finite, [:x]}, {:is_finite, [:y]}]})
-      carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x])
+    groups =
+      DataFrame.summarise(
+        finite,
+        [:panel, :group],
+        [
+          {:xs, {:list, [:x]}}
+          | for(name <- carried -- [:panel, :group], do: {name, {:first, [name]}})
+        ]
+      )
 
-      groups =
-        DataFrame.summarise(
-          finite,
-          [:panel, :group],
-          [
-            {:xs, {:list, [:x]}}
-            | for(name <- carried -- [:panel, :group], do: {name, {:first, [name]}})
-          ]
-        )
-
-      estimates =
-        groups
-        |> DataFrame.split(:panel)
-        |> Enum.sort()
-        |> Enum.flat_map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
-
-      spacing = spacing(DataFrame.pull(groups, :y))
-
-      greatest =
-        estimates
-        |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
-        |> Enum.max(fn -> 0.0 end)
-
-      estimates
-      |> Enum.map(fn {rows, index, places, densities} ->
-        peak = Enum.max(densities)
-
-        group_frame(rows, List.duplicate(index, length(places)), carried,
-          x: places,
-          density: densities,
-          ndensity: Enum.map(densities, fn density -> share(density, peak) end),
-          height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
-        )
-      end)
-      |> joined(groups, carried)
-    end
-
-    # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
-    # panel's rows, the group's index among them, the places and the densities there.
-    defp panel_estimates(stat, rows) do
-      samples = DataFrame.pull(rows, :xs)
-      pooled = Enum.concat(samples)
-      width = bandwidth(stat.bandwidth, pooled)
-      span = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
-      {low, high} = span
-      places = KernelDensity.places(low, high, @places)
-
-      samples
-      |> Enum.with_index()
-      |> Enum.map(fn {values, index} ->
-        {rows, index, places, KernelDensity.estimate(values, width, span, @places)}
-      end)
-    end
-
-    # A group's rows: its carried columns repeated once per place, beside the columns computed.
-    defp group_frame(rows, indices, carried, computed) do
-      rows
-      |> DataFrame.slice(indices)
-      |> DataFrame.select(Enum.map(carried, fn name -> {name, name} end))
-      |> then(fn frame ->
-        Enum.reduce(computed, frame, fn {name, values}, built ->
-          DataFrame.put(built, name, values)
-        end)
-      end)
-    end
-
-    # The groups' rows end to end; a layer of no groups has none, in the columns it would have.
-    defp joined([], groups, carried),
-      do: group_frame(groups, [], carried, x: [], density: [], ndensity: [], height: [])
-
-    defp joined(frames, _groups, _carried), do: DataFrame.concat_rows(frames)
-
-    defp share(density, peak) when peak > 0, do: density / peak
-    defp share(_density, _peak), do: 0.0
-
-    defp bandwidth(width, _values) when is_float(width), do: width
-
-    # Silverman's rule, R's `bw.nrd0()`, falling back as it does where the spread is 0.
-    defp bandwidth(:nrd0, values) do
-      count = length(values)
-      mean = Enum.sum(values) / count
-
-      deviation =
-        :math.sqrt(
-          Enum.sum(Enum.map(values, fn value -> (value - mean) ** 2 end)) / max(count - 1, 1)
-        )
-
-      spread = (quantile(values, 0.75) - quantile(values, 0.25)) / 1.34
-
-      0.9 * spread_of(min(deviation, spread), deviation, abs(hd(values))) * count ** -0.2
-    end
-
-    # The spread Silverman's rule scales, the lesser of the two where it is above 0, else the
-    # standard deviation, else the first value's size, else 1, as R's `bw.nrd0()` documents.
-    defp spread_of(lesser, _deviation, _first) when lesser > 0, do: lesser
-    defp spread_of(_lesser, deviation, _first) when deviation > 0, do: deviation
-    defp spread_of(_lesser, _deviation, first) when first > 0, do: first
-    defp spread_of(_lesser, _deviation, _first), do: 1.0
-
-    # R's type 7 quantile.
-    defp quantile(values, probability) do
-      sorted = Enum.sort(values)
-      position = (length(sorted) - 1) * probability
-      low = floor(position)
-      high = ceil(position)
-      Enum.at(sorted, low) + (Enum.at(sorted, high) - Enum.at(sorted, low)) * (position - low)
-    end
-
-    # The least gap between the layer's distinct baselines, 1 where there is one.
-    defp spacing(baselines) do
-      baselines
-      |> Enum.filter(&is_number/1)
-      |> Enum.uniq()
+    estimates =
+      groups
+      |> DataFrame.split(:panel)
       |> Enum.sort()
-      |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.map(fn [lower, upper] -> upper - lower end)
-      |> Enum.min(fn -> 1.0 end)
-    end
+      |> Enum.flat_map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
 
-    defp scaled(_density, greatest, _spacing) when greatest == 0, do: 0.0
-    defp scaled(density, greatest, spacing), do: density / greatest * spacing
+    spacing = spacing(DataFrame.pull(groups, :y))
+
+    greatest =
+      estimates
+      |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
+      |> Enum.max(fn -> 0.0 end)
+
+    estimates
+    |> Enum.map(fn {rows, index, places, densities} ->
+      peak = Enum.max(densities)
+
+      group_frame(rows, List.duplicate(index, length(places)), carried,
+        x: places,
+        density: densities,
+        ndensity: Enum.map(densities, fn density -> share(density, peak) end),
+        height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
+      )
+    end)
+    |> joined(groups, carried)
   end
+
+  # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
+  # panel's rows, the group's index among them, the places and the densities there.
+  defp panel_estimates(stat, rows) do
+    samples = DataFrame.pull(rows, :xs)
+    pooled = Enum.concat(samples)
+    width = bandwidth(stat.bandwidth, pooled)
+    span = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
+    {low, high} = span
+    places = KernelDensity.places(low, high, @places)
+
+    samples
+    |> Enum.with_index()
+    |> Enum.map(fn {values, index} ->
+      {rows, index, places, KernelDensity.estimate(values, width, span, @places)}
+    end)
+  end
+
+  # A group's rows: its carried columns repeated once per place, beside the columns computed.
+  defp group_frame(rows, indices, carried, computed) do
+    rows
+    |> DataFrame.slice(indices)
+    |> DataFrame.select(Enum.map(carried, fn name -> {name, name} end))
+    |> then(fn frame ->
+      Enum.reduce(computed, frame, fn {name, values}, built ->
+        DataFrame.put(built, name, values)
+      end)
+    end)
+  end
+
+  # The groups' rows end to end; a layer of no groups has none, in the columns it would have.
+  defp joined([], groups, carried),
+    do: group_frame(groups, [], carried, x: [], density: [], ndensity: [], height: [])
+
+  defp joined(frames, _groups, _carried), do: DataFrame.concat_rows(frames)
+
+  defp share(density, peak) when peak > 0, do: density / peak
+  defp share(_density, _peak), do: 0.0
+
+  defp bandwidth(width, _values) when is_float(width), do: width
+
+  # Silverman's rule, R's `bw.nrd0()`, falling back as it does where the spread is 0.
+  defp bandwidth(:nrd0, values) do
+    count = length(values)
+    mean = Enum.sum(values) / count
+
+    deviation =
+      :math.sqrt(
+        Enum.sum(Enum.map(values, fn value -> (value - mean) ** 2 end)) / max(count - 1, 1)
+      )
+
+    spread = (quantile(values, 0.75) - quantile(values, 0.25)) / 1.34
+
+    0.9 * spread_of(min(deviation, spread), deviation, abs(hd(values))) * count ** -0.2
+  end
+
+  # The spread Silverman's rule scales, the lesser of the two where it is above 0, else the
+  # standard deviation, else the first value's size, else 1, as R's `bw.nrd0()` documents.
+  defp spread_of(lesser, _deviation, _first) when lesser > 0, do: lesser
+  defp spread_of(_lesser, deviation, _first) when deviation > 0, do: deviation
+  defp spread_of(_lesser, _deviation, first) when first > 0, do: first
+  defp spread_of(_lesser, _deviation, _first), do: 1.0
+
+  # R's type 7 quantile.
+  defp quantile(values, probability) do
+    sorted = Enum.sort(values)
+    position = (length(sorted) - 1) * probability
+    low = floor(position)
+    high = ceil(position)
+    Enum.at(sorted, low) + (Enum.at(sorted, high) - Enum.at(sorted, low)) * (position - low)
+  end
+
+  # The least gap between the layer's distinct baselines, 1 where there is one.
+  defp spacing(baselines) do
+    baselines
+    |> Enum.filter(&is_number/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.map(fn [lower, upper] -> upper - lower end)
+    |> Enum.min(fn -> 1.0 end)
+  end
+
+  defp scaled(_density, greatest, _spacing) when greatest == 0, do: 0.0
+  defp scaled(density, greatest, spacing), do: density / greatest * spacing
 end
