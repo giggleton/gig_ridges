@@ -142,13 +142,5 @@ defmodule GigRidges.Ridgeline do
   end
 
   # The ribbon a ridge is set up and drawn by: along x, outlined along its top alone.
-  defp ribbon do
-    Geom.Ribbon.new(
-      orientation: :x,
-      outline_type: :upper,
-      lineend: :butt,
-      linejoin: :round,
-      linemitre: 10.0
-    )
-  end
+  defp ribbon, do: Geom.new(Geom.Ribbon, orientation: :x, outline_type: :upper, linejoin: :round)
 end
