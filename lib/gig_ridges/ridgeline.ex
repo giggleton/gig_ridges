@@ -85,7 +85,7 @@ defmodule GigRidges.Ridgeline do
       |> Keyword.merge(color: element.ink, linewidth: element.linewidth)
     end
 
-    def setup_data(ridgeline, frame, axis_kinds) do
+    def setup_data(ridgeline, frame, axis_types) do
       baselines = DataFrame.pull(frame, :y)
       heights = DataFrame.pull(frame, :height)
       cut_off = cut_off(ridgeline, heights)
@@ -104,7 +104,7 @@ defmodule GigRidges.Ridgeline do
         |> DataFrame.put(:ymin, lows)
         |> DataFrame.put(:ymax, highs)
 
-      Geom.setup_data(ribbon(), ranged, axis_kinds)
+      Geom.setup_data(ribbon(), ranged, axis_types)
     end
 
     # Each ridge drawn by the ribbon, the highest baseline first, so a lower ridge is drawn over
