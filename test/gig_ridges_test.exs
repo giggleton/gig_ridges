@@ -71,7 +71,7 @@ defmodule GigRidgesTest do
 
   describe "geom_density_ridges/3" do
     setup do
-      %{plot: Plot.new(Giggly.Datasets.mpg(), %{x: :hwy, y: :class})}
+      %{plot: Plot.new(GigDatasets.mpg(), %{x: :hwy, y: :class})}
     end
 
     # R 4.6.1's `density()` of mpg's compact class, `bw.nrd0()` of every class's `hwy` together,

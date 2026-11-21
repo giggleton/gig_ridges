@@ -24,7 +24,7 @@ end
 ## Use
 
 ```elixir
-Giggly.Datasets.mpg()
+GigDatasets.mpg()
 |> Giggly.Plot.new(%{x: :hwy, y: :class, fill: :class})
 |> GigRidges.geom_density_ridges(alpha: 0.7, rel_min_height: 0.01)
 |> Giggly.to_svg()

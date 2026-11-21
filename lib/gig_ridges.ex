@@ -9,7 +9,7 @@ defmodule GigRidges do
   own, and its mistakes are refused naming it.
 
       iex> frame =
-      ...>   Giggly.Datasets.mpg()
+      ...>   GigDatasets.mpg()
       ...>   |> Giggly.Plot.new(%{x: :hwy, y: :class})
       ...>   |> GigRidges.geom_density_ridges()
       ...>   |> Giggly.layer_data()

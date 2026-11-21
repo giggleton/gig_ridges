@@ -29,6 +29,7 @@ defmodule GigRidges.MixProject do
     [
       {:giggly, path: "/home/srowley/repos/giggly/.claude/worktrees/next-increment-cf41fe"},
       {:nx, "~> 1.0"},
+      {:gig_datasets, path: "../gig_datasets", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
   end
