@@ -33,19 +33,21 @@ GigDatasets.mpg()
 - `GigRidges.geom_ridgeline/3` draws ridges of the heights a table gives: each group's ridge
   reaches `scale` times its `height` above its baseline `y`.
 - `GigRidges.geom_density_ridges/3` and `GigRidges.stat_density_ridges/3` estimate each group's
-  density along `x` with one bandwidth all the groups share, and draw it so the greatest density
-  reaches the next baseline at a `scale:` of 1.
+  density along `x` with one bandwidth each panel's groups share, and draw it so the panel's
+  greatest density reaches the next baseline at a `scale:` of 1; their `scale:` is 1.8 unless
+  given or mapped, so neighbouring ridges overlap.
 
 Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`,
 `linetype:`, `position:`) beside its own: `scale:`, `min_height:` and `rel_min_height:` for the
-ridges, `bandwidth:` for the density.
+ridges, each of which may be mapped instead, and `bandwidth:` and `panel_scaling:` for the
+density.
 
 ## Relationship to ggridges
 
 The idea of the ridgeline plot, and the names of these functions and their options, follow R's
 ggridges package, so they read familiarly to its users. GigRidges is an independent
-implementation from ggridges' documented behaviour: it contains none of ggridges' code, text or
-data, and its defaults are its own.
+implementation from ggridges' documented behaviour, its defaults and computed values checked
+against what ggridges 0.5.7 computes: it contains none of ggridges' code, text or data.
 
 ## Licence
 

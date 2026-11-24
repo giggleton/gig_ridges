@@ -3,17 +3,19 @@ defmodule GigRidges.DensityRidges do
   The density ridges stat: each group's density along `x`, estimated with one bandwidth shared by
   every group, so ridges of one plot are smoothed alike.
 
-  Per panel, the bandwidth is the one given, or else worked out from the panel's rows together by
-  Silverman's rule, R's `bw.nrd0()`: 0.9 times the lesser of the standard deviation and the
-  interquartile range over 1.34, times the number of rows to the power of minus one fifth. Each
-  group's density is the normal kernel's, estimated as R's `density()` estimates one and read at
-  512 places evenly across the panel's rows, reaching three bandwidths beyond them
+  Per panel, the bandwidth is the one given, or else the joint bandwidth: the mean, over the
+  panel's groups of two values or more, of each group's by Silverman's rule, R's `bw.nrd0()`, 0.9
+  times the lesser of the standard deviation and the interquartile range over 1.34, times the
+  number of values to the power of minus one fifth. A group of fewer than three values has no
+  density and is left out, though its values still count towards the joint bandwidth and the
+  places. Each group's density is the normal kernel's, estimated as R's `density()` estimates one
+  and read at 512 places evenly across the panel's rows, reaching three bandwidths beyond them
   (`GigRidges.KernelDensity`), so its values are R's to within round-off.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
-  the group's greatest, and `height`, the density scaled so the layer's greatest reaches the spacing
-  between baselines, which the ridgeline draws above each baseline. A group's columns holding one
-  value within it are carried.
+  the group's greatest, and `height`, the density scaled so the panel's greatest reaches the
+  spacing between baselines, or the layer's greatest under `panel_scaling: false`, which the
+  ridgeline draws above each baseline. A group's columns holding one value within it are carried.
   """
 
   use Giggly.Stat
@@ -22,9 +24,9 @@ defmodule GigRidges.DensityRidges do
   alias Giggly.Stat.Carry
   alias GigRidges.KernelDensity
 
-  defstruct bandwidth: :nrd0
+  defstruct bandwidth: :nrd0, panel_scaling: true
 
-  @type t :: %__MODULE__{bandwidth: :nrd0 | float()}
+  @type t :: %__MODULE__{bandwidth: :nrd0 | float(), panel_scaling: boolean()}
 
   @impl Giggly.Stat
   def options do
@@ -34,7 +36,15 @@ defmodule GigRidges.DensityRidges do
         default: :nrd0,
         doc:
           "The bandwidth every group's density is estimated with, a number above 0, or `:nrd0`, " <>
-            "Silverman's rule over the panel's rows together."
+            "the mean of Silverman's rule over each of the panel's groups."
+      ],
+      panel_scaling: [
+        type: :boolean,
+        default: true,
+        doc:
+          "Whether each panel's ridges are scaled so its greatest density reaches the next " <>
+            "baseline (`true`), or the layer's ridges together, so a panel of lower densities " <>
+            "draws lower ridges (`false`)."
       ]
     ]
   end
@@ -82,46 +92,62 @@ defmodule GigRidges.DensityRidges do
         ]
       )
 
-    estimates =
+    panels =
       groups
       |> DataFrame.split(:panel)
       |> Enum.sort()
-      |> Enum.flat_map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
+      |> Enum.map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
 
     spacing = spacing(DataFrame.pull(groups, :y))
+    layer_greatest = panels |> Enum.concat() |> greatest()
 
-    greatest =
-      estimates
-      |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
-      |> Enum.max(fn -> 0.0 end)
+    panels
+    |> Enum.flat_map(fn estimates ->
+      greatest = if stat.panel_scaling, do: greatest(estimates), else: layer_greatest
 
-    estimates
-    |> Enum.map(fn {rows, index, places, densities} ->
-      peak = Enum.max(densities)
+      Enum.map(estimates, fn {rows, index, places, densities} ->
+        peak = Enum.max(densities)
 
-      group_frame(rows, List.duplicate(index, length(places)), carried,
-        x: places,
-        density: densities,
-        ndensity: Enum.map(densities, fn density -> share(density, peak) end),
-        height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
-      )
+        group_frame(rows, List.duplicate(index, length(places)), carried,
+          x: places,
+          density: densities,
+          ndensity: Enum.map(densities, fn density -> share(density, peak) end),
+          height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
+        )
+      end)
     end)
     |> joined(groups, carried)
   end
 
+  # The greatest density among `estimates`, 0 where there are none.
+  defp greatest(estimates) do
+    estimates
+    |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
+    |> Enum.max(fn -> 0.0 end)
+  end
+
   # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
-  # panel's rows, the group's index among them, the places and the densities there.
+  # panel's rows, the group's index among them, the places and the densities there; a group of
+  # fewer than three values has none, so a panel of no larger group has no estimates.
   defp panel_estimates(stat, rows) do
     samples = DataFrame.pull(rows, :xs)
+
+    estimated =
+      for {values, index} <- Enum.with_index(samples), length(values) >= 3, do: {values, index}
+
+    estimates(stat, samples, estimated, rows)
+  end
+
+  defp estimates(_stat, _samples, [], _rows), do: []
+
+  defp estimates(stat, samples, estimated, rows) do
     pooled = Enum.concat(samples)
-    width = bandwidth(stat.bandwidth, pooled)
+    width = bandwidth(stat.bandwidth, samples)
     span = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
     {low, high} = span
     places = KernelDensity.places(low, high, @places)
 
-    samples
-    |> Enum.with_index()
-    |> Enum.map(fn {values, index} ->
+    Enum.map(estimated, fn {values, index} ->
       {rows, index, places, KernelDensity.estimate(values, width, span, @places)}
     end)
   end
@@ -147,10 +173,16 @@ defmodule GigRidges.DensityRidges do
   defp share(density, peak) when peak > 0, do: density / peak
   defp share(_density, _peak), do: 0.0
 
-  defp bandwidth(width, _values) when is_float(width), do: width
+  defp bandwidth(width, _samples) when is_float(width), do: width
+
+  # The joint bandwidth: the mean of Silverman's rule over the groups of two values or more.
+  defp bandwidth(:nrd0, samples) do
+    widths = for values <- samples, length(values) >= 2, do: nrd0(values)
+    Enum.sum(widths) / length(widths)
+  end
 
   # Silverman's rule, R's `bw.nrd0()`, falling back as it does where the spread is 0.
-  defp bandwidth(:nrd0, values) do
+  defp nrd0(values) do
     count = length(values)
     mean = Enum.sum(values) / count
 

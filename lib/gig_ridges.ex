@@ -27,7 +27,8 @@ defmodule GigRidges do
   `scale` times its `height` above it (`GigRidges.Ridgeline`), the rows drawn as they are.
 
   It needs `:x`, `:y` and `:height`, and takes the ridgeline's options, `scale:`, `min_height:`
-  and `rel_min_height:`, beside Giggly's options for the marks.
+  and `rel_min_height:`, beside Giggly's options for the marks; each of the three may be mapped
+  instead, giving each point its own, an option given beating its mapping.
 
       iex> frame =
       ...>   %{"x" => [1, 2, 3, 1, 2, 3], "y" => [0, 0, 0, 1, 1, 1], "h" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1]}
@@ -45,16 +46,18 @@ defmodule GigRidges do
 
   def geom_ridgeline(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
-    layer(plot, mapping, options, :identity, "GigRidges.geom_ridgeline/3")
+    layer(plot, mapping, options, {:identity, GigRidges.Ridgeline}, "GigRidges.geom_ridgeline/3")
   end
 
   @doc """
   Adds a layer of density ridges: each group's density along `x`, estimated with one bandwidth
-  every group shares (`GigRidges.DensityRidges`), drawn as a ridgeline above its `y`, so the
-  greatest density reaches the next baseline at a `scale:` of 1.
+  each panel's groups share (`GigRidges.DensityRidges`), drawn as a ridgeline above its `y`, so the
+  panel's greatest density reaches the next baseline at a `scale:` of 1.
 
   It needs `:x` and `:y`, `y` most often a discrete column whose values name the ridges, and takes
-  the stat's `bandwidth:` and the ridgeline's options beside Giggly's options for the marks.
+  the stat's `bandwidth:` and `panel_scaling:` and the ridgeline's options beside Giggly's options
+  for the marks, its `scale:` 1.8 unless given or mapped, so neighbouring ridges overlap; a
+  `scale`, `min_height` or `rel_min_height` mapped is each ridge's own.
   """
   @spec stat_density_ridges(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
   def stat_density_ridges(plot, mapping_or_options \\ %{}, options \\ [])
@@ -64,7 +67,7 @@ defmodule GigRidges do
 
   def stat_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
-    layer(plot, mapping, options, GigRidges.DensityRidges, "GigRidges.stat_density_ridges/3")
+    density_layer(plot, mapping, options, "GigRidges.stat_density_ridges/3")
   end
 
   @doc """
@@ -78,14 +81,16 @@ defmodule GigRidges do
 
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
-    layer(plot, mapping, options, GigRidges.DensityRidges, "GigRidges.geom_density_ridges/3")
+    density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
   end
 
-  defp layer(plot, mapping, options, stat, function) do
-    Plot.layer(
-      plot,
-      mapping,
-      [stat: stat, geom: GigRidges.Ridgeline, function: function] ++ options
-    )
+  # A layer of density ridges, drawn by the density ridges' geom, 1.8 times their height unless
+  # `scale` is given or mapped.
+  defp density_layer(plot, mapping, options, function) do
+    components = {GigRidges.DensityRidges, GigRidges.DensityRidgeline}
+    layer(plot, mapping, options, components, function)
   end
+
+  defp layer(plot, mapping, options, {stat, geom}, function),
+    do: Plot.layer(plot, mapping, [stat: stat, geom: geom, function: function] ++ options)
 end
