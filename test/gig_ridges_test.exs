@@ -1394,6 +1394,28 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_line(alpha = 0.5, colour = "red",
+    # linetype = "dashed")`: each set for every point, and `layer_data()` holding no `height`, the
+    # density in `y`.
+    test "takes an alpha, colour and line type set for every point, and keeps no height" do
+      plot = Plot.new(@spread, %{x: :v})
+      looks = [:alpha, :color, :linetype]
+
+      read = fn options ->
+        frame =
+          plot |> GigRidges.geom_density_line([bw: 1, n: 5] ++ options) |> Giggly.layer_data()
+
+        {Enum.map(looks, &(frame |> DataFrame.pull(&1) |> Enum.uniq())), DataFrame.names(frame)}
+      end
+
+      {[_alpha, _color, [solid]], _names} = read.([])
+      {[alpha, color, [dashed]], names} = read.(alpha: 0.5, colour: "red", linetype: :dashed)
+
+      assert {alpha, color} == {[0.5], ["#FF0000"]}
+      assert dashed != solid
+      refute :height in names
+    end
+
     test "takes its mapping in its own call, names itself in its refusals, and needs an x" do
       own =
         @spread
