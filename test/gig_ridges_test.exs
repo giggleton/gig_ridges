@@ -1144,6 +1144,153 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "geom_vridgeline/3" do
+    # Ridges up y: two on baselines x 0 and 1, five points each, one width below 0.
+    @upright %{
+      "x" => List.duplicate(0, 5) ++ List.duplicate(1, 5),
+      "y" => [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+      "w" => [0.2, -0.5, 1, 0.9, 0.3, 0.5, 0.4, 0.1, 0.3, 0.6]
+    }
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_vridgeline()` over widths 0.2, 0.9 and 0.3 on
+    # x 0 and 0.5, 0.4 and 0.1 on x 1: `xmin` each point's x and `xmax` x plus its width; filled
+    # grey80, where its other ridgelines are grey70, outlined black 0.5 mm wide along the outer edge
+    # alone, each ridge a polygon of 6 points unoutlined and a line of 3, the ridge of the greater
+    # baseline drawn first.
+    test "reaches each width beyond its baseline x, drawing the farthest baseline first" do
+      plot =
+        %{
+          "x" => [0, 0, 0, 1, 1, 1],
+          "y" => [1, 2, 3, 1, 2, 3],
+          "w" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1]
+        }
+        |> Plot.new(%{x: :x, y: :y, width: :w, group: :x})
+        |> GigRidges.geom_vridgeline()
+
+      frame = Giggly.layer_data(plot)
+      assert DataFrame.pull(frame, :xmin) == [0, 0, 0, 1, 1, 1]
+      assert DataFrame.pull(frame, :xmax) == [0.2, 0.9, 0.3, 1.5, 1.4, 1.1]
+
+      looks =
+        for column <- [:fill, :color, :linewidth],
+            do: frame |> DataFrame.pull(column) |> Enum.uniq()
+
+      assert looks == [["#CCCCCC"], ["#000000"], [0.5]]
+
+      drawn =
+        plot
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<(polygon|polyline) points='([^']*)' style='([^']*)'/, &1))
+        |> Enum.map(fn [_element, tag, points, style] ->
+          places = String.split(points, " ", trim: true)
+
+          {tag, length(places), places |> hd() |> String.split(",") |> hd() |> String.to_float(),
+           style}
+        end)
+
+      assert [
+               {"polygon", 6, _, unoutlined},
+               {"polyline", 3, farther, line},
+               {"polygon", 6, _, unoutlined},
+               {"polyline", 3, nearer, line}
+             ] = drawn
+
+      assert unoutlined =~ "stroke: none" and line =~ "stroke-width: 1.07; stroke: #000000"
+      assert farther > nearer
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, over @upright, counting each ridge's drawn points
+    # from x 0: unmapped, 4 and 5, the width below 0 left out; `min_width = 0.3`, 3 and 4; and
+    # `aes(min_width = m)`, 0.5 on x 0 and NA on x 1, 2 and 5, a missing cut-off none; and
+    # `aes(scale = s)`, NA at x 1's first point and 2 for the rest, leaves that point out.
+    test "leaves out a point below its min_width, given or mapped, and one of no scale" do
+      kept = fn data, mapping, options ->
+        data
+        |> Plot.new(Map.merge(%{x: :x, y: :y, width: :w, group: :x}, mapping))
+        |> GigRidges.geom_vridgeline(options)
+        |> Giggly.layer_data()
+        |> by_group([:xmax])
+        |> Enum.map(fn [xmax] -> Enum.count(xmax, &is_number/1) end)
+      end
+
+      assert kept.(@upright, %{}, []) == [4, 5]
+      assert kept.(@upright, %{}, min_width: 0.3) == [3, 4]
+
+      cut = Map.put(@upright, "m", List.duplicate(0.5, 5) ++ List.duplicate(nil, 5))
+      assert kept.(cut, %{min_width: :m}, []) == [2, 5]
+
+      scaled = Map.put(@upright, "s", [1, 1, 1, 1, 1, nil, 2, 2, 2, 2])
+
+      xmax =
+        scaled
+        |> Plot.new(%{x: :x, y: :y, width: :w, group: :x, scale: :s})
+        |> GigRidges.geom_vridgeline()
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:xmax)
+
+      assert xmax == [0.2, nil, 1.0, 0.9, 0.3, nil, 1.8, 1.2, 1.6, 2.2]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_vridgeline(aes(fill = f))`: its legend keys
+    # drawn as its other ridgelines' are, but taking the ribbon's room, twice as wide as their
+    # line, 56.906 TeX points at a `linewidth` of 10, 56.69 in Giggly's, where its other
+    # ridgelines' take 28.453; at 0.5, the theme's least, 17.28.
+    test "gives each legend key the ribbon's room, twice as wide as its line" do
+      plot =
+        @upright
+        |> Map.put("f", List.duplicate("a", 5) ++ List.duplicate("b", 5))
+        |> Plot.new(%{x: :x, y: :y, width: :w, group: :x, fill: :f})
+
+      svg = fn width ->
+        plot
+        |> GigRidges.geom_vridgeline(linewidth: width)
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+      end
+
+      sides = fn width ->
+        width
+        |> svg.()
+        |> then(
+          &Regex.scan(~r/width='([0-9.]+)' height='([0-9.]+)' style='[^']*fill: #EBEBEB;'/, &1)
+        )
+        |> Enum.flat_map(fn
+          [_key, side, side] -> [side]
+          [_panel, _width, _height] -> []
+        end)
+        |> Enum.uniq()
+      end
+
+      assert {sides.(0.5), sides.(10)} == {["17.28"], ["56.69"]}
+
+      assert length(
+               Regex.scan(~r/<rect [^>]*stroke: #000000[^>]*fill: #(F8766D|00BFC4)/, svg.(0.5))
+             ) == 2
+    end
+
+    test "needs a width, and refuses one of text and the ridgeline's min_height, naming itself" do
+      plot = Plot.new(@upright, %{x: :x, y: :y, group: :x})
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_vridgeline\/3.*width/, fn ->
+        plot |> GigRidges.geom_vridgeline() |> Giggly.layer_data()
+      end
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_vridgeline\/3 maps :width to "f"/, fn ->
+        @upright
+        |> Map.put("f", List.duplicate("a", 10))
+        |> Plot.new(%{x: :x, y: :y, width: :f})
+        |> GigRidges.geom_vridgeline()
+        |> Giggly.layer_data()
+      end
+
+      assert_raise NimbleOptions.ValidationError, ~r/unknown options \[:min_height\]/, fn ->
+        GigRidges.geom_vridgeline(plot, min_height: 0.1)
+      end
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame

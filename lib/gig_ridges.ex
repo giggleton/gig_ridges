@@ -2,7 +2,8 @@ defmodule GigRidges do
   @moduledoc """
   Ridgeline plots for Giggly: ridges along `x`, one above each baseline, as joy plots draw them.
 
-  `geom_ridgeline/3` draws ridges of the heights a table gives; `stat_density_ridges/3` and
+  `geom_ridgeline/3` draws ridges of the heights a table gives, and `geom_vridgeline/3` of the
+  widths it gives, running up `y`; `stat_density_ridges/3` and
   `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge, and
   `geom_density_ridges2/3` draws it outlined round its whole border. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
@@ -48,6 +49,40 @@ defmodule GigRidges do
   def geom_ridgeline(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     layer(plot, mapping, options, {:identity, GigRidges.Ridgeline}, "GigRidges.geom_ridgeline/3")
+  end
+
+  @doc """
+  Adds a layer of vertical ridgelines: each group a ridge up `y`, its baseline its `x` and its
+  outer edge `scale` times its `width` beyond it (`GigRidges.VRidgeline`), the rows drawn as they
+  are.
+
+  It needs `:x`, `:y` and `:width`, and takes `scale:` and `min_width:` beside Giggly's options
+  for the marks; each may be mapped instead, giving each point its own, an option given beating
+  its mapping.
+
+      iex> frame =
+      ...>   %{"x" => [0, 0, 0, 1, 1, 1], "y" => [1, 2, 3, 1, 2, 3], "w" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1]}
+      ...>   |> Giggly.Plot.new(%{x: :x, y: :y, width: :w, group: :x})
+      ...>   |> GigRidges.geom_vridgeline(scale: 2)
+      ...>   |> Giggly.layer_data()
+      iex> Giggly.DataFrame.pull(frame, :xmax)
+      [0.4, 1.8, 0.6, 2.0, 1.8, 1.2]
+  """
+  @spec geom_vridgeline(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def geom_vridgeline(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def geom_vridgeline(%Plot{} = plot, options, []) when is_list(options),
+    do: geom_vridgeline(plot, %{}, options)
+
+  def geom_vridgeline(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    layer(
+      plot,
+      mapping,
+      options,
+      {:identity, GigRidges.VRidgeline},
+      "GigRidges.geom_vridgeline/3"
+    )
   end
 
   @doc """

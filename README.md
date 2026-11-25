@@ -32,6 +32,8 @@ GigDatasets.mpg()
 
 - `GigRidges.geom_ridgeline/3` draws ridges of the heights a table gives: each group's ridge
   reaches `scale` times its `height` above its baseline `y`.
+- `GigRidges.geom_vridgeline/3` draws them turned, up `y`: each ridge reaches `scale` times its
+  `width` beyond its baseline `x`, cut off by `min_width:`.
 - `GigRidges.geom_density_ridges/3` and `GigRidges.stat_density_ridges/3` estimate each group's
   density along `x` with one bandwidth each panel's groups share, and draw it so the panel's
   greatest density reaches the next baseline at a `scale:` of 1; their `scale:` is 1.8 unless

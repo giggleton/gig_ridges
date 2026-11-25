@@ -6,10 +6,10 @@
 
 gig_ridges is one small library with one API module, `GigRidges`: its layer functions are what a
 user calls. The stat and geom modules beneath it (`GigRidges.DensityRidges`, `GigRidges.Ridgeline`,
-`GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`) are what those functions hand Giggly;
-`GigRidges.KernelDensity` is internal (`@moduledoc false`). Toward Giggly, gig_ridges is a plugin,
-and uses only Giggly's documented plugin API: the behaviours it adopts (`Giggly.Stat`,
-`Giggly.Geom`), and the modules and functions Giggly documents for plugins.
+`GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`, `GigRidges.VRidgeline`) are what
+those functions hand Giggly; `GigRidges.KernelDensity` is internal (`@moduledoc false`). Toward
+Giggly, gig_ridges is a plugin, and uses only Giggly's documented plugin API: the behaviours it
+adopts (`Giggly.Stat`, `Giggly.Geom`), and the modules and functions Giggly documents for plugins.
 
 Nothing checks this but the review. gig_ridges has no `use Boundary`, and Giggly's boundary
 exports everything, so a call into a Giggly module or function that is `@moduledoc false` or
