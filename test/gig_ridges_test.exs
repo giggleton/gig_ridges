@@ -3003,6 +3003,10 @@ defmodule GigRidgesTest do
 
       serif = ridged(&GigRidges.theme_ridges(&1, font_family: "serif"))
       assert attribute(text(serif, "value"), "font-family") == "serif"
+
+      assert attribute(text(ridged(&GigRidges.theme_ridges/1), "value"), "font-family") ==
+               attribute(text(ridged(&Plot.theme_gray/1), "value"), "font-family")
+
       assert attribute(text(serif, "a"), "font-family") == "serif"
     end
 
@@ -3039,17 +3043,78 @@ defmodule GigRidgesTest do
       assert length(elements(svg, "rect", "stroke: #000000")) == 2
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `theme_ridges()` at `font_size` 14 and 20, each
+    # element's resolved spacing, as running it shows them: the tick labels 2.9995 points from the
+    # axis (4.285 at 20); the axes' titles 5.999 from the tick labels and 2.9995 from the edge
+    # (8.57 and 4.285), at the far ends (hjust 1); the title 7 above the panels (10), vjust 0.5;
+    # the subtitle and the caption 5.999 from the panels (8.57); the plot's margin 7, 14 on the
+    # right (10, 20); the legends' keys a line tall and their ticks 0.2 lines long; no margin round
+    # the strips' labels. Drawn alike, mark for mark, over a plot with every one of them.
+    test "spaces every part of the plot as ggridges does, at any font size" do
+      plot =
+        %{"v" => [0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b)}
+        |> Plot.new(%{x: :v, y: :g, fill: :g})
+        |> GigRidges.geom_density_ridges(bandwidth: 1)
+        |> Plot.geom_point(%{colour: :v})
+        |> Plot.facet_wrap(:g)
+        |> Plot.labs(title: "Title", subtitle: "Sub", caption: "Cap", x: "value", y: "group")
+
+      for {size, small, half} <- [{14, 2.9995, 5.999}, {20, 4.285, 8.57}] do
+        golden =
+          plot
+          |> Plot.theme_gray(base_size: size)
+          |> Plot.theme(
+            rect: [fill: "transparent", linewidth: 0, linetype: :blank],
+            axis_text: [color: "black", size: {:rel, 0.857}],
+            axis_text_x: [margin: [top: small]],
+            axis_text_y: [margin: [right: small], vjust: 0],
+            axis_title_x: [hjust: 1, margin: [top: half, bottom: small]],
+            axis_title_y: [hjust: 1, margin: [right: half, left: small]],
+            panel_background: :none,
+            panel_grid_minor: :none,
+            plot_background: :none,
+            legend_key: :none,
+            legend_justification: {:left, :center},
+            legend_key_size: {1, :lines},
+            legend_ticks_length: {0.2, :lines},
+            legend_text: [size: {:rel, 0.857}],
+            strip_background: [fill: "#CCCCCC", color: "#7F7F7F", linewidth: 0, linetype: :blank],
+            strip_text: [color: "black", size: {:rel, 0.857}, margin: 0],
+            plot_title: [face: :bold, size: {:rel, 1}, vjust: 0.5, margin: [bottom: size / 2]],
+            plot_subtitle: [size: {:rel, 0.857}, margin: [bottom: half]],
+            plot_caption: [size: {:rel, 0.857}, margin: [top: half]],
+            plot_margin: [top: size / 2, right: size, bottom: size / 2, left: size / 2],
+            axis_ticks: [color: "#E5E5E5", linewidth: 0.5],
+            panel_grid_major: [color: "#E5E5E5", linewidth: 0.5]
+          )
+
+        drawn = fn plot -> plot |> Giggly.to_svg() |> IO.iodata_to_binary() end
+        assert drawn.(GigRidges.theme_ridges(plot, font_size: size)) == drawn.(golden)
+      end
+    end
+
     test "gives its theme alone, to be laid over a plot, as Giggly's complete themes do" do
       kept = GigRidges.theme_ridges(grid: false)
       assert ridged(&Plot.theme(&1, kept)) == ridged(&GigRidges.theme_ridges(&1, grid: false))
+      assert GigRidges.theme_ridges() == GigRidges.theme_ridges([])
     end
 
     test "refuses a size below 0 and an option it does not take" do
-      for {option, value} <- [font_size: -1, line_size: "wide", grid: "yes", colour: "red"] do
-        assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
-          GigRidges.theme_ridges([{option, value}])
-        end
+      for {option, value} <- [font_size: -1, line_size: "wide", grid: "yes"] do
+        error =
+          assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+            GigRidges.theme_ridges([{option, value}])
+          end
+
+        assert Exception.message(error) =~ inspect(value)
       end
+
+      assert_raise NimbleOptions.ValidationError, ~r/colour/, fn ->
+        GigRidges.theme_ridges(colour: "red")
+      end
+
+      assert ridged(&GigRidges.theme_ridges(&1, line_size: 0)) =~
+               "stroke-width: 0.00; stroke: #E5E5E5"
     end
   end
 
