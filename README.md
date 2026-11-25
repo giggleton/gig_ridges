@@ -66,7 +66,9 @@ density ridges' geoms set each point up its ridge by a random share of its heigh
 from `seed:`, unless given another `position:`, where `stat_density_ridges/3` leaves them on their
 baselines; `position: {GigRidges.PointsJitter, ...}`, ggridges' `position_points_jitter()`, moves
 each up to `width:` across and `height:` up or down from `yoffset:` above its baseline, with
-`adjust_vlines:` running the quantile lines across that band.
+`adjust_vlines:` running the quantile lines across that band; and `position:
+{GigRidges.PointsRaincloud, ...}`, ggridges' `position_raincloud()`, drops each into a band
+`height:` deep, `ygap:` below its baseline, as rain below a cloud.
 
 ## Relationship to ggridges
 

@@ -2913,6 +2913,88 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "GigRidges.PointsRaincloud" do
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, jittered_points = TRUE, quantile_lines = TRUE, position =
+    # position_raincloud(seed = 1))` over @spread: each point's `x` its value and its `ymin` from
+    # 0.45 to 0.05 below its baseline, -0.4253 to -0.0721 drawn; its `y` and `ymax`, the ridges'
+    # rows and the quantile lines' as under `position = "identity"`. R's draws are not reproduced,
+    # so the points stand elsewhere in that band.
+    test "drops each point into a band below its baseline, and nothing else" do
+      identity = jittered(:identity)
+      frame = jittered(GigRidges.PointsRaincloud)
+      {dx, dy} = moves(frame)
+
+      assert Enum.all?(dx, &(&1 == 0))
+      assert Enum.all?(dy, &(&1 >= -0.45 and &1 <= -0.05))
+      assert length(Enum.uniq(dy)) == 13
+      assert points(frame, [:y, :ymax]) == points(identity, [:y, :ymax])
+
+      for type <- ["ridgeline", "vline"] do
+        columns = [:x, :y, :ymin, :ymax, :density]
+        assert typed(frame, type, columns) == typed(identity, type, columns)
+      end
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: `position_raincloud(width, height, ygap, seed)`
+    # moving each point as `position_points_jitter(width, height = height / 2, yoffset = -(ygap +
+    # height / 2), seed)` does with the same seed, `width = 0.5, height = 0.2, ygap = 0.1` and
+    # `height = 0.4, ygap = 0.05` alike; under `height = 0, ygap = 0.3, adjust_vlines = TRUE`
+    # every point and quantile line 0.3 below its baseline; and under `adjust_vlines = TRUE` at
+    # the defaults each line from 0.45 below its baseline to 0.05 below.
+    test "moves each point as the jitter its band is, the lines across it under adjust_vlines:" do
+      for {rain, jitter} <- [
+            {[width: 0.5, height: 0.2, ygap: 0.1, seed: 3],
+             [width: 0.5, height: 0.1, yoffset: -0.2, seed: 3]},
+            {[], [height: 0.2, yoffset: -0.25]}
+          ] do
+        rained = moves(jittered({GigRidges.PointsRaincloud, rain}))
+        shaken = moves(jittered({GigRidges.PointsJitter, jitter}))
+        assert close_to?(elem(rained, 0), elem(shaken, 0))
+        assert close_to?(elem(rained, 1), elem(shaken, 1))
+      end
+
+      flat =
+        jittered({GigRidges.PointsRaincloud, height: 0, ygap: 0.3, adjust_vlines: true})
+
+      {_dx, dy} = moves(flat)
+      assert close_to?(dy, List.duplicate(-0.3, 13))
+      [ymin, ymax] = quantile_lines(flat, [:ymin, :ymax])
+      assert close_to?(ymin, [0.7, 0.7, 0.7, 1.7, 1.7, 1.7])
+      assert ymin == ymax
+
+      [ymin, ymax] =
+        {GigRidges.PointsRaincloud, adjust_vlines: true}
+        |> jittered()
+        |> quantile_lines([:ymin, :ymax])
+
+      assert close_to?(ymin, [0.55, 0.55, 0.55, 1.55, 1.55, 1.55])
+      assert close_to?(ymax, [0.95, 0.95, 0.95, 1.95, 1.95, 1.95])
+    end
+
+    test "leaves a layer with no points' rows, as a ridgeline's, as it is" do
+      ridgeline = fn position ->
+        @ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline(position: position)
+        |> Giggly.layer_data()
+      end
+
+      assert ridgeline.({GigRidges.PointsRaincloud, width: 1}) == ridgeline.(:identity)
+    end
+
+    test "refuses a distance below 0, a gap that is not a number, and a seed not whole" do
+      for {option, value} <- [width: -0.1, height: -1, ygap: "down", seed: 1.5] do
+        error =
+          assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+            jittered({GigRidges.PointsRaincloud, [{option, value}]})
+          end
+
+        assert Exception.message(error) =~ inspect(value)
+      end
+    end
+  end
+
   describe "GigRidges.PointsSina" do
     # Each point's share of its ridge's height it is set up by.
     defp shares(frame) do

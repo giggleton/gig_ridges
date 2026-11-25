@@ -119,8 +119,8 @@ defmodule GigRidges do
   read at; and `quantile_lines:`, `quantiles:` and `quantile_fun:`, a line up each ridge at each of
   its group's quantiles, or under `calc_ecdf:` each place's `ecdf` and band alone;
   `jittered_points:`, a point under each ridge at each of its group's values, drawn in the `point_*`
-  given, on its baseline unless the layer's position moves it, as `GigRidges.PointsSina` and
-  `GigRidges.PointsJitter` do; the lines drawn in the `vline_color:`, `vline_width:` and `vline_linetype:` given, over the
+  given, on its baseline unless the layer's position moves it, as `GigRidges.PointsSina`,
+  `GigRidges.PointsJitter` and `GigRidges.PointsRaincloud` do; the lines drawn in the `vline_color:`, `vline_width:` and `vline_linetype:` given, over the
   ridge's own; and the density ridges' geom's (`GigRidges.DensityRidgeline`) beside Giggly's options
   for the marks: `scale:`, 1.8 unless given or mapped, so neighbouring ridges overlap;
   `panel_scaling:`, whether each panel's tallest ridge or the layer's reaches the next baseline; and

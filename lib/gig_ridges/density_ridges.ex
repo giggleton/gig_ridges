@@ -32,7 +32,8 @@ defmodule GigRidges.DensityRidges do
   Under `jittered_points:`, each group has a row for each of its values too, its density and its
   `ecdf` read from the ridge's, its band where banded, and its `datatype` `"point"`, which every
   ridgeline geom draws as a point at the height its `ymin` is given, its baseline unless the
-  layer's position moves it, as `GigRidges.PointsSina` and `GigRidges.PointsJitter` do.
+  layer's position moves it, as `GigRidges.PointsSina`, `GigRidges.PointsJitter` and
+  `GigRidges.PointsRaincloud` do.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density, which the density ridges' geom
