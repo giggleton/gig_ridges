@@ -2623,6 +2623,94 @@ defmodule GigRidgesTest do
       assert own =~ "stroke-width: 2.83; stroke: #008000; stroke-opacity: 0.30; fill: #FFFF00"
     end
 
+    # Each shape `point_shape:` takes, by R's number, by Giggly's name, as a character and `:none`,
+    # drawn as Giggly's own points draw it, element for element, on one panel.
+    test "draws every shape Giggly draws, as Giggly draws it" do
+      a = %{"v" => [-1, -0.5, 0, 0, 0.5, 1], "g" => List.duplicate("a", 6)}
+      pinned = &Plot.coord_cartesian(&1, xlim: {-12, 12}, ylim: {1, 2.8})
+
+      marks = fn svg ->
+        ~r/<(circle|polygon|polyline|line|path|text)\b[^>]*>/
+        |> Regex.scan(svg)
+        |> Enum.map(&hd/1)
+      end
+
+      own = fn shape ->
+        a
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(
+          bandwidth: 1,
+          jittered_points: true,
+          position: :identity,
+          point_shape: shape
+        )
+        |> pinned.()
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> String.split(~r/<polyline [^>]*>/, parts: 2)
+        |> List.last()
+        |> marks.()
+      end
+
+      giggly = fn shape ->
+        a
+        |> Plot.new(%{x: :v, y: :g})
+        |> Plot.geom_point(
+          shape: shape,
+          size: 1.5,
+          stroke: 0.5,
+          colour: "#000000",
+          fill: "#B3B3B3"
+        )
+        |> pinned.()
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> marks.()
+      end
+
+      for shape <- Enum.to_list(0..25) ++ [:circle, :star, :triangle_down_filled, "x", :none] do
+        assert own.(shape) == giggly.(shape)
+      end
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: a's points' `ndensity`, 0.7145248, 0.9198302, 1, 1,
+    # 0.9198302 and 0.7145248; and the points' style at its edges: a size and alpha of 0, an alpha of
+    # 1, no outline, and `point_color` alone.
+    test "shares each point's density of the group's greatest, and takes a style's edges" do
+      frame = [] |> pointed() |> Giggly.layer_data()
+      [ndensity, group] = points(frame, [:ndensity, :group])
+      a = for {value, 1} <- Enum.zip(ndensity, group), do: value
+      assert close_to?(a, [0.7145248, 0.9198302, 1.0, 1.0, 0.9198302, 0.7145248])
+
+      circle = fn options ->
+        options
+        |> pointed()
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.run(~r/<circle [^>]*r='([0-9.]+)' style='([^']*)'/, &1))
+        |> tl()
+      end
+
+      assert [_r, "stroke-width: 0.71; stroke: #0000FF; fill: #0000FF;"] =
+               circle.(point_color: "blue")
+
+      assert [_r, unoutlined] = circle.(point_stroke: :none)
+      refute unoutlined =~ "stroke-width: 0.71"
+      assert [_r, opaque] = circle.(point_alpha: 1)
+      refute opaque =~ "opacity"
+
+      for options <- [[point_size: 0], [point_alpha: 0]] do
+        assert %Plot{} = pointed(options)
+      end
+
+      assert_raise NimbleOptions.ValidationError, ~r/:point_alpha/, fn ->
+        pointed(point_alpha: -1)
+      end
+    end
+
     test "refuses points' styles Giggly refuses, and both spellings of their colour" do
       for {option, value} <- [
             point_shape: 26,
