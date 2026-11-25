@@ -24,13 +24,13 @@ commit, over the lines the commit changed.
 ## Scope
 
 Default to reviewing **changed code only** — what the branch has committed since it left
-`master`, plus everything uncommitted or untracked, since review usually runs before the commit:
+`main`, plus everything uncommitted or untracked, since review usually runs before the commit:
 
 ```bash
-base=$(git merge-base HEAD master) && { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u
+base=$(git merge-base HEAD main) && { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u
 ```
 
-On `master` itself the merge base is `HEAD`, so the list is the working tree's changes; on a
+On `main` itself the merge base is `HEAD`, so the list is the working tree's changes; on a
 branch it adds the branch's commits. A failed `git merge-base` prints its error and stops the
 command with a non-zero status, so an empty list means there are no changes, never that the
 command broke.
