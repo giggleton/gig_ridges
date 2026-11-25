@@ -5,7 +5,8 @@ defmodule GigRidges do
   `geom_ridgeline/3` draws ridges of the heights a table gives, and `geom_vridgeline/3` of the
   widths it gives, running up `y`; `stat_density_ridges/3` and
   `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge, and
-  `geom_density_ridges2/3` draws it outlined round its whole border. Each
+  `geom_density_ridges2/3` draws it outlined round its whole border; `geom_density_line/3` draws
+  one density over a baseline of 0 the way the ridges are drawn. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it.
@@ -123,6 +124,33 @@ defmodule GigRidges do
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
+  end
+
+  @doc """
+  Adds a layer of density lines: each group's density along `x`, estimated by Giggly's density
+  stat (`Giggly.Plot.geom_density/3`'s), drawn as a ridgeline over a baseline of 0
+  (`GigRidges.DensityLine`), filled grey70 and outlined in black along its top, where
+  `Giggly.Plot.geom_density/3` is filled with nothing.
+
+  It needs `:x`, and takes the density stat's options, `bw:`, `adjust:`, `kernel:`, `n:`, `trim:`
+  and `bounds:`, beside Giggly's options for the marks; a mapped `y` reads another of the stat's
+  variables, as `{:after_stat, [:count]}`.
+  """
+  @spec geom_density_line(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def geom_density_line(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def geom_density_line(%Plot{} = plot, options, []) when is_list(options),
+    do: geom_density_line(plot, %{}, options)
+
+  def geom_density_line(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    layer(
+      plot,
+      mapping,
+      options,
+      {:density, GigRidges.DensityLine},
+      "GigRidges.geom_density_line/3"
+    )
   end
 
   @doc """

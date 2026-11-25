@@ -45,7 +45,7 @@ module's name and read each hit for a claim of ownership it no longer holds.
 | The change | Update |
 |---|---|
 | A layer function, option, default or aesthetic users see | **README**'s Use section, and the `GigRidges` function's `@doc` and doctest, accurate to the *final* behavior. |
-| How a stat or geom computes or draws | Its module's `@moduledoc` (`GigRidges.DensityRidges`, `GigRidges.Ridgeline`, `GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`, `GigRidges.VRidgeline`); an internal module's opening comment under `@moduledoc false`. |
+| How a stat or geom computes or draws | Its module's `@moduledoc` (`GigRidges.DensityRidges`, `GigRidges.Ridgeline`, `GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`, `GigRidges.VRidgeline`, `GigRidges.DensityLine`); an internal module's opening comment under `@moduledoc false`. |
 | A new or changed public function | Its `@doc` (with a doctest only on an API function) and a `@spec`; a non-API function's comment under `@doc false`. |
 | A value now matched to ggridges | The README's "Relationship to ggridges" when the claim it makes changes (the version checked against); the test's `Golden:` label names the versions. |
 | How work is done here: a gate, a pass, a rule for sessions | **CLAUDE.md**, a sentence or two; the step itself is its skill or `mix.exs`. |

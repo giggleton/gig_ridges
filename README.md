@@ -40,6 +40,9 @@ GigDatasets.mpg()
   given or mapped, so neighbouring ridges overlap.
 - `GigRidges.geom_density_ridges2/3` draws the same ridges, each outlined round its whole border,
   its baseline too, not along its top alone.
+- `GigRidges.geom_density_line/3` draws a density over a baseline of 0 the way the ridges are
+  drawn, filled grey70 and outlined along its top, taking Giggly's density options (`bw:`,
+  `adjust:`, `kernel:`, `n:`, `trim:`, `bounds:`).
 
 Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`,
 `linetype:`, `position:`) beside its own: `scale:` for the ridges, with `min_height:` for the

@@ -1291,6 +1291,128 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "geom_density_line/3" do
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_line(bw = 1, n = 5)` over @spread's
+    # values: ggplot2's density, `y` and `ymax` 0.031011684, 0.020018223, 0.184055119, 0.020018223
+    # and 0.031011684 at x -9 to 9, `ymin` 0; filled grey70 and outlined black 0.5 mm wide along
+    # its top alone, a polygon of 10 points unoutlined and a line of 5, where ggplot2's
+    # `geom_density()` is filled with nothing; and grouped by `fill`, a's peak 0.330854 and b's
+    # 0.0582277.
+    test "draws a density over a baseline of 0 the way the ridges are drawn" do
+      close? = fn read, golden ->
+        Enum.all?(Enum.zip_with(read, golden, &abs(&1 - &2)), &(&1 < 1.0e-8))
+      end
+
+      plot = Plot.new(@spread, %{x: :v})
+      frame = plot |> GigRidges.geom_density_line(bw: 1, n: 5) |> Giggly.layer_data()
+
+      golden = [0.031011684, 0.020018223, 0.184055119, 0.020018223, 0.031011684]
+      assert DataFrame.pull(frame, :x) == [-9.0, -4.5, 0.0, 4.5, 9.0]
+
+      assert close?.(DataFrame.pull(frame, :y), golden) and
+               close?.(DataFrame.pull(frame, :ymax), golden)
+
+      assert DataFrame.pull(frame, :ymin) == List.duplicate(0, 5)
+
+      looks =
+        for column <- [:fill, :color, :linewidth],
+            do: frame |> DataFrame.pull(column) |> Enum.uniq()
+
+      assert looks == [["#B3B3B3"], ["#000000"], [0.5]]
+
+      drawn =
+        plot
+        |> GigRidges.geom_density_line(bw: 1, n: 5)
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<(polygon|polyline) points='([^']*)' style='([^']*)'/, &1))
+        |> Enum.map(fn [_element, tag, points, style] ->
+          {tag, length(String.split(points, " ", trim: true)), style}
+        end)
+
+      assert [{"polygon", 10, unoutlined}, {"polyline", 5, line}] = drawn
+      assert unoutlined =~ "stroke: none" and unoutlined =~ "fill: #B3B3B3"
+      assert line =~ "stroke-width: 1.07; stroke: #000000"
+
+      peaks =
+        @spread
+        |> Plot.new(%{x: :v, fill: :g})
+        |> GigRidges.geom_density_line(bw: 1, n: 5)
+        |> Giggly.layer_data()
+        |> by_group([:ymax])
+        |> Enum.map(fn [ymax] -> ymax |> Enum.max() |> Float.round(6) end)
+
+      assert peaks == [0.330854, 0.058228]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: `aes(y = after_stat(count))`, `n = 3`, reaches
+    # 0.403152, 2.392717 and 0.403152; and its legend keys the ridgelines', room as wide as their
+    # line, 28.453 TeX points at a `linewidth` of 10, 28.35 in Giggly's, the theme's least, 17.28,
+    # at 0.5. Departure: ggridges lists `scale` and `min_height` among its aesthetics, but neither
+    # changes what it draws; given, they are refused.
+    test "reads another of the stat's variables, keys as the ridges, and takes no scale" do
+      ymax =
+        @spread
+        |> Plot.new(%{x: :v, y: {:after_stat, [:count]}})
+        |> GigRidges.geom_density_line(bw: 1, n: 3)
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+        |> Enum.map(&Float.round(&1, 6))
+
+      assert ymax == [0.403152, 2.392717, 0.403152]
+
+      plot = Plot.new(@spread, %{x: :v, fill: :g})
+
+      sides = fn width ->
+        plot
+        |> GigRidges.geom_density_line(bw: 1, linewidth: width)
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(
+          &Regex.scan(~r/width='([0-9.]+)' height='([0-9.]+)' style='[^']*fill: #EBEBEB;'/, &1)
+        )
+        |> Enum.flat_map(fn
+          [_key, side, side] -> [side]
+          [_panel, _width, _height] -> []
+        end)
+        |> Enum.uniq()
+      end
+
+      assert {sides.(0.5), sides.(10)} == {["17.28"], ["28.35"]}
+
+      glyphs =
+        plot |> GigRidges.geom_density_line(bw: 1) |> Giggly.to_svg() |> IO.iodata_to_binary()
+
+      assert length(Regex.scan(~r/<rect [^>]*stroke: #000000[^>]*fill: #(F8766D|00BFC4)/, glyphs)) ==
+               2
+
+      for {option, value} <- [scale: 2, min_height: 0.1] do
+        assert_raise NimbleOptions.ValidationError, ~r/unknown options \[:#{option}\]/, fn ->
+          GigRidges.geom_density_line(plot, [{option, value}])
+        end
+      end
+    end
+
+    test "takes its mapping in its own call, names itself in its refusals, and needs an x" do
+      own =
+        @spread
+        |> Plot.new(%{})
+        |> GigRidges.geom_density_line(%{x: :v}, n: 7)
+        |> Giggly.layer_data()
+
+      assert DataFrame.row_count(own) == 7
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_density_line\/3 sets :shape/, fn ->
+        GigRidges.geom_density_line(Plot.new(@spread, %{x: :v}), shape: 1)
+      end
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_density_line\/3.*:x/, fn ->
+        @spread |> Plot.new(%{}) |> GigRidges.geom_density_line() |> Giggly.layer_data()
+      end
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame
