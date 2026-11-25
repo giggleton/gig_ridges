@@ -286,10 +286,18 @@ defmodule GigRidgesTest do
     end
 
     # ggridges 0.5.7's ridges are filled grey70 and outlined in black half a millimetre wide,
-    # whatever the theme's ink.
-    test "fills its ridges grey70 and outlines them in black, whatever the theme", %{plot: plot} do
+    # whatever the theme's ink. Departure: a theme's geom fill and colour replace them, as they do
+    # every Giggly geom's and ggplot2's own geoms', where ggridges 0.5.7 keeps grey70 and black.
+    test "fills its ridges grey70 and outlines them in black, but in a theme's geom fill and colour",
+         %{plot: plot} do
+      themes = [
+        plot,
+        Plot.theme_dark(plot, ink: "white", paper: "#333333"),
+        Plot.theme(plot, geom: [fill: "#FF0000", colour: "#0000FF"])
+      ]
+
       looks =
-        Enum.map([plot, Plot.theme_dark(plot, ink: "white", paper: "#333333")], fn themed ->
+        Enum.map(themes, fn themed ->
           frame = themed |> GigRidges.geom_density_ridges() |> Giggly.layer_data()
 
           Enum.map([:fill, :color, :linewidth], fn column ->
@@ -297,7 +305,8 @@ defmodule GigRidgesTest do
           end)
         end)
 
-      assert looks == List.duplicate([["#B3B3B3"], ["#000000"], [0.5]], 2)
+      own = [["#B3B3B3"], ["#000000"], [0.5]]
+      assert looks == [own, own, [["#FF0000"], ["#0000FF"], [0.5]]]
     end
 
     test "takes a bandwidth given, every group estimated with it", %{plot: plot} do

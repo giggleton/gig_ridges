@@ -114,7 +114,9 @@ defmodule GigRidges.Ridgeline do
   def validate_share(other), do: {:error, "expected a number from 0 to 1, got: #{inspect(other)}"}
 
   # The ribbon's defaults, but a fill of R's grey70 and a black top line half a millimetre wide,
-  # whatever the theme, as ggridges' ridgelines take them.
+  # whatever the theme's ink and paper, as ggridges' ridgelines take them. A theme's geom fill and
+  # colour replace them, as they do every Giggly geom's (`Giggly.Geom.default_aesthetics/2`) and
+  # ggplot2's own geoms': a departure from ggridges 0.5.7, which keeps grey70 and black.
   @impl Giggly.Geom
   def default_aesthetics(_ridgeline, element) do
     ribbon()
