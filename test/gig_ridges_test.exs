@@ -2802,8 +2802,22 @@ defmodule GigRidgesTest do
     end
 
     # The same seed moves the same points the same way, as ggridges' does; the distances drawn
-    # from it are Erlang's, each panel drawing afresh from it, as Giggly's jitter draws them.
-    test "draws the same distances from the same seed, each panel afresh" do
+    # from it, 0 unless given, are Erlang's, each point's across and then up, each panel drawing
+    # afresh from it, as Giggly's jitter draws them over the same values.
+    test "draws the distances Giggly's jitter draws from the same seed, each panel afresh" do
+      {giggly_x, giggly_y} =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> Plot.geom_point(position: {:jitter, width: 0.5, height: 0.3, seed: 0})
+        |> Giggly.layer_data()
+        |> then(&{DataFrame.pull(&1, :x), DataFrame.pull(&1, :y)})
+
+      {dx, dy} =
+        jittered({GigRidges.PointsJitter, width: 0.5, height: 0.3, yoffset: 0.4}) |> moves()
+
+      assert close_to?(dx, Enum.zip_with(giggly_x, @spread["v"], &(&1 - &2)))
+      assert close_to?(dy, Enum.zip_with(giggly_y, @baselines, &(&1 - &2 + 0.4)))
+
       jitter = {GigRidges.PointsJitter, width: 0.5, seed: 7}
       assert moves(jittered(jitter)) == moves(jittered(jitter))
       refute moves(jittered(jitter)) == moves(jittered({GigRidges.PointsJitter, width: 0.5}))
@@ -2855,9 +2869,12 @@ defmodule GigRidgesTest do
 
     test "refuses a distance below 0, an offset that is not a number, and a seed not whole" do
       for {option, value} <- [width: -0.1, height: -1, yoffset: "up", seed: 1.5] do
-        assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
-          jittered({GigRidges.PointsJitter, [{option, value}]})
-        end
+        error =
+          assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+            jittered({GigRidges.PointsJitter, [{option, value}]})
+          end
+
+        assert Exception.message(error) =~ inspect(value)
       end
     end
   end

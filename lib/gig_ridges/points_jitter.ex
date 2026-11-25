@@ -107,7 +107,7 @@ defmodule GigRidges.PointsJitter do
           {up, stream} = :rand.uniform_s(stream)
           dx = distance(across, jitter.width)
           dy = jitter.yoffset + distance(up, jitter.height)
-          {{moved(x, dx), moved(y, dy)}, Map.put(streams, panel, stream)}
+          {{x + dx, y + dy}, Map.put(streams, panel, stream)}
 
         {_type, _panel, x, _y, low}, streams ->
           {{x, low}, streams}
@@ -132,7 +132,7 @@ defmodule GigRidges.PointsJitter do
       |> Enum.zip()
       |> Enum.zip(Enum.zip(DataFrame.pull(frame, :ymin), DataFrame.pull(frame, :ymax)))
       |> Enum.map(fn
-        {{"vline", y}, _range} -> {moved(y, low), moved(y, high)}
+        {{"vline", y}, _range} -> {y + low, y + high}
         {_row, range} -> range
       end)
       |> Enum.unzip()
@@ -144,7 +144,4 @@ defmodule GigRidges.PointsJitter do
 
   # R's `runif(1, -amount, amount)` for the draw `draw`: `min + (max - min) * draw`.
   defp distance(draw, amount), do: -amount + 2 * amount * draw
-
-  defp moved(position, distance) when is_number(position), do: position + distance
-  defp moved(missing, _distance), do: missing
 end
