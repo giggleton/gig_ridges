@@ -2268,9 +2268,10 @@ defmodule GigRidgesTest do
 
       empty = Plot.new(%{"v" => [nil, nil, nil], "g" => ~w(a a a)}, %{x: :v, y: :g})
 
-      for {options, columns} <- [
-            {[], [:datatype]},
-            {[quantile_lines: true], [:datatype, :ecdf, :quantile]}
+      for {options, columns, absent} <- [
+            {[], [:x, :density, :ndensity, :height, :datatype], [:ecdf, :quantile]},
+            {[quantile_lines: true], [:datatype, :ecdf, :quantile], []},
+            {[calc_ecdf: true], [:datatype, :ecdf, :quantile], []}
           ] do
         names =
           empty
@@ -2279,6 +2280,7 @@ defmodule GigRidgesTest do
           |> DataFrame.names()
 
         assert Enum.all?(columns, &(&1 in names))
+        refute Enum.any?(absent, &(&1 in names))
       end
     end
 
