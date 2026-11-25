@@ -1,6 +1,6 @@
 defmodule GigRidges.PointsRaincloud do
   @moduledoc """
-  The jittered points' raincloud, ggridges' `position_raincloud()`: each of the layer's points,
+  The jittered points' raincloud: each of the layer's points,
   its rows whose `datatype` is `"point"`, dropped below its ridge as rain below a cloud, into a
   band `height:` deep, 0.4 unless given, whose top is `ygap:` below its baseline, 0.05 unless
   given, in the units of the y axis, and moved across by up to `width:` either way, 0 unless
@@ -8,7 +8,7 @@ defmodule GigRidges.PointsRaincloud do
   `adjust_vlines:` the quantile lines, the rows whose `datatype` is `"vline"`, which then run
   across the band the points fall in.
 
-  It is `GigRidges.PointsJitter` with its band so placed, as ggridges' raincloud is its jitter:
+  It is `GigRidges.PointsJitter` with its band so placed:
   a jitter `width:` across, `height:` halved up or down, about `ygap:` and half of `height:`
   below the baseline, drawn from `seed:`, 0 unless given, as the jitter draws its distances. A
   layer with no `datatype`, as a ridgeline's, is left as it is.
@@ -16,6 +16,8 @@ defmodule GigRidges.PointsRaincloud do
   It is given to a layer's `position:`, alone or with its options, as `position:
   {GigRidges.PointsRaincloud, height: 0.2, seed: 7}`.
   """
+
+  # ggridges' `position_raincloud()`, which is its jitter with the band so placed too.
 
   use Giggly.Position
 

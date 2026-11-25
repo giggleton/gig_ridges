@@ -64,7 +64,8 @@ same change. Step 1's grep already covered `.claude/skills/`.
 
 `mix quality`'s test step runs the doctests, so an example that no longer matches fails there.
 For a module or function a doc names in backticks, check it still exists (Step 1's grep, on the
-name). gig_ridges has no ExDoc build, so nothing else resolves the references.
+name). `mix docs` resolves the rest: run it and
+clear its warnings, as one for a `@moduledoc false` module named in an API doc.
 
 ## Step 5 — record the pass for the commit gate
 

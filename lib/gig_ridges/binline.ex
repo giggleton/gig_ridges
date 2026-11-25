@@ -1,12 +1,12 @@
 defmodule GigRidges.Binline do
   @moduledoc """
-  The binned ridges' stat: each group's values counted in bins along `x`, as ggplot2's
-  `stat_bin()` counts them, every group of a panel in the panel's bins, and each bin written as
+  The binned ridges' stat: each group's values counted in bins along `x`,
+  every group of a panel in the panel's bins, and each bin written as
   the two ends of a step, so the ridge drawn through them is the histogram's outline.
 
   The bins are the `breaks:` given, or bins `binwidth:` wide, or else `bins:` of them, 30 unless
-  given, spanning the panel's `x`, each placed by `center:` or `boundary:`, as `stat_bin()` places
-  them, closed on the right unless `closed: :left`. With `pad:`, as unless `pad: false`, an empty
+  given, spanning the panel's `x`, each placed by `center:` or `boundary:`,
+  closed on the right unless `closed: :left`. With `pad:`, as unless `pad: false`, an empty
   bin as wide as the first is added before them and one as wide as the last after. A value outside
   the bins is not counted, and a panel left with fewer than two breaks, as a scale's
   transformation leaves the breaks it cannot take, has no bins and draws nothing.
@@ -21,6 +21,9 @@ defmodule GigRidges.Binline do
   density or shares, and draws no ridge, its counts missing too under `draw_baseline: false`. A
   group's columns holding one value within it are carried.
   """
+
+  # The bins are counted and placed as ggplot2's `stat_bin()` counts and places them
+  # (`GigRidges.Binning`).
 
   use Giggly.Stat
 

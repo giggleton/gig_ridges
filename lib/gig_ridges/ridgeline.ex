@@ -8,8 +8,7 @@ defmodule GigRidges.Ridgeline do
   `min_height`, a point below 0 is, and a point whose mapped `min_height` is missing is never cut
   off. The density ridges' geom (`GigRidges.DensityRidgeline`) cuts at `rel_min_height` times the
   layer's greatest height, across every panel, in its place. A quantile line or jittered point, a
-  row whose `datatype` is `"vline"` or `"point"`, is never cut off, however low its ridge is cut,
-  as ggridges keeps them.
+  row whose `datatype` is `"vline"` or `"point"`, is never cut off, however low its ridge is cut.
 
   `scale` and `min_height` are each an option and an aesthetic: given as an option, its value is
   every point's; else a mapped column gives each point its own; else its default, a `scale` of 1,
@@ -19,12 +18,12 @@ defmodule GigRidges.Ridgeline do
 
   It draws by delegation to Giggly's ribbon (`Giggly.Geom.Ribbon`): its setup works out each
   point's `ymin` and `ymax` and hands the rows to the ribbon's setup, and each ridge is drawn by the
-  ribbon, as is its legend key, which needs room as wide as its line, as ggridges' keys do, where
+  ribbon, as is its legend key, which needs room as wide as its line, where
   the ribbon's needs twice that. Rows whose `datatype` is `"vline"`, the quantile lines the density
   ridges' stat writes, are kept from the ribbon and drawn as lines from each ridge's baseline up
   to it, between its fill and its top line, in the ridge's colour, line width and line type, or in
   the `vline_color:` (or `vline_colour:`), `vline_width:` and `vline_linetype:` given, each over
-  the ridge's own, as ggridges' `vline_*` set them. Rows whose `datatype` is `"point"`, the
+  the ridge's own. Rows whose `datatype` is `"point"`, the
   jittered points, are kept from the ribbon too and drawn after the ridge and its lines, each at
   its value and its `ymin`, as R's shape 19 1.5 mm across and outlined 0.5 mm, in the ridge's
   colour, fill and alpha, or the `point_shape:`, `point_size:`, `point_stroke:`, `point_color:` (or

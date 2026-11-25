@@ -2,12 +2,14 @@ defmodule GigRidges.DensityLine do
   @moduledoc """
   The density line geom: a density, or any `y` above 0, drawn as a ridgeline over a baseline of 0
   (`GigRidges.Ridgeline`), filled R's grey70 down to 0 and outlined in black along its top alone,
-  its legend keys the ridgeline's, where ggplot2's `geom_density()` is filled with nothing.
+  its legend keys the ridgeline's, where `Giggly.Plot.geom_density/3` is filled with nothing.
 
-  It takes no `scale` or `min_height`: ggridges' density line lists them among its aesthetics,
-  but neither changes what it draws, so they are refused here, as Giggly refuses what would do
-  nothing.
+  It takes no `scale` or `min_height`: neither would change what it draws, so they are refused,
+  as Giggly refuses what would do nothing.
   """
+
+  # ggridges' density line lists `scale` and `min_height` among its aesthetics, though neither
+  # changes what it draws.
 
   use Giggly.Geom
 

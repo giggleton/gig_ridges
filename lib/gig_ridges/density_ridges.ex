@@ -8,8 +8,8 @@ defmodule GigRidges.DensityRidges do
   times the lesser of the standard deviation and the interquartile range over 1.34, times the
   number of values to the power of minus one fifth. A group of fewer than three values has no
   density and is left out, though its values still count towards the joint bandwidth and the
-  places. Each group's density is the normal kernel's, estimated as R's `density()` estimates one
-  (`GigRidges.KernelDensity`), so its values are R's to within round-off, and read at `n:` places,
+  places. Each group's density is the normal kernel's, estimated as R's `density()` estimates one,
+  so its values are R's to within round-off, and read at `n:` places,
   512 unless given, evenly from `from:` to `to:`, each end, where not given, three bandwidths
   beyond the panel's rows; a panel whose places would run backwards, `from:` alone above where
   `to:` falls or `to:` alone below `from:`, has none. A value further than four bandwidths
@@ -19,11 +19,11 @@ defmodule GigRidges.DensityRidges do
   A `weight` mapped weighs each row's share of its group's density, its weight over the group's
   total, as R's `density(weights = )` takes weights summing to 1; the bandwidth is worked out from
   the values unweighted. Where a group estimated has a weight missing or below 0, or weights
-  totalling 0, R's `density()` fails, and the panel has no density, as ggridges draws none of it.
+  totalling 0, R's `density()` fails, and the panel has no density.
 
   Under `calc_ecdf:` or `quantile_lines:`, each place of a ridge has its `ecdf`, the density's left
-  sum to it times the step between places, unnormalised, as ggridges sums it, and its `quantile`,
-  the band between its group's quantiles it falls in, a category, as ggridges' is a factor, the
+  sum to it times the step between places, unnormalised, and its `quantile`,
+  the band between its group's quantiles it falls in, a category, the
   quantiles `quantile_fun:` of its values at the probabilities `quantiles:` gives, a count of equal
   parts, 4 unless given, or the probabilities themselves; R's type 7 quantiles where no function
   is given. Under `quantile_lines:`, each group has a row for each of its quantiles too, at its
@@ -40,8 +40,12 @@ defmodule GigRidges.DensityRidges do
   (`GigRidges.DensityRidgeline`) scales to the spacing between baselines as it draws, and the
   plain ridgeline draws as it is; and `datatype`, `"ridgeline"`. A group's columns holding one
   value within it are carried,
-  a `weight` among them where every group's is one value, as ggridges keeps it.
+  a `weight` among them where every group's is one value.
   """
+
+  # As ggridges does: a panel whose weights R's `density()` fails on draws nothing; the `ecdf` is
+  # the unnormalised left sum; `quantile` is a category, as ggridges' is a factor; and a `weight`
+  # of one value within each group is carried.
 
   use Giggly.Stat
 

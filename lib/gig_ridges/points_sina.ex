@@ -1,25 +1,27 @@
 defmodule GigRidges.PointsSina do
   @moduledoc """
-  The jittered points' sina, ggridges' `position_points_sina()`, which the density ridges' geoms
+  The jittered points' sina, which the density ridges' geoms
   take unless given another position: each of the layer's points, its rows whose `datatype` is
   `"point"`, set up from its baseline by a random share of its ridge's height there, from
   `ymin` at its baseline to `ymax` at the ridge's top, so the points fill the ridge as its
   density does. The share runs from `rel_min:` to `rel_max:`, 0.02 and 0.98 unless given, and is
   the point's `ymin`, the height it is drawn at; its `x` and every other row stay where they are.
 
-  Departure: ggridges 0.5.7 sets each share between 0.02 and `rel_max`, whatever `rel_min` it is
-  given; gig_ridges sets it between `rel_min:` and `rel_max:`, the same at the default 0.02. A
-  `rel_min:` above `rel_max:` is refused.
+  A `rel_min:` above `rel_max:` is refused.
 
   The shares come from random numbers drawn from `seed:`, 0 unless given, as
   `GigRidges.PointsJitter` draws its distances, one for each point: a draw `u` from 0 to 1
   becoming `rel_min + (rel_max - rel_min) * u`. R's own numbers are not reproduced, so the same
-  seed draws other points than ggridges' does, within the same bands. A layer with no
+  seed draws other points than R would, within the same bands. A layer with no
   `datatype`, as a ridgeline's, is left as it is.
 
   It is given to a layer's `position:`, alone or with its options, as `position:
   {GigRidges.PointsSina, rel_max: 0.5, seed: 7}`.
   """
+
+  # ggridges' `position_points_sina()`. Departure: ggridges 0.5.7 sets each share between 0.02
+  # and `rel_max`, whatever `rel_min` it is given; gig_ridges sets it between `rel_min:` and
+  # `rel_max:`, the same at the default 0.02.
 
   use Giggly.Position
 

@@ -1,6 +1,6 @@
 defmodule GigRidges.PointsJitter do
   @moduledoc """
-  The jittered points' jitter, ggridges' `position_points_jitter()`: each of the layer's points,
+  The jittered points' jitter: each of the layer's points,
   its rows whose `datatype` is `"point"`, moved across by up to `width:` either way, 0 unless
   given, and set up from its baseline by `yoffset:`, 0 unless given, and up to `height:` either
   way, 0.2 unless given, in the units of the y axis, its `ymin` the height it is drawn at. Every
@@ -12,12 +12,14 @@ defmodule GigRidges.PointsJitter do
   algorithm, each panel drawing afresh from the seed, as Giggly's own jitter (`position:
   :jitter`) draws them: each point in turn draws two, across and then up, a draw `u` from 0 to 1
   becoming `-amount + 2 * amount * u`, as R's `runif()` scales one. R's own numbers are not
-  reproduced, so the same seed draws other points than ggridges' does, within the same bands. A
+  reproduced, so the same seed draws other points than R would, within the same bands. A
   layer with no `datatype`, as a ridgeline's, is left as it is.
 
   It is given to a density ridges layer's `position:`, alone or with its options, as
   `position: {GigRidges.PointsJitter, height: 0.1, seed: 7}`.
   """
+
+  # ggridges' `position_points_jitter()`.
 
   use Giggly.Position
 

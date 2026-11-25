@@ -10,14 +10,13 @@ and point geoms, and scales and a theme built from Giggly's public scale and the
 
 ## Installation
 
-GigRidges needs Giggly's plugin API, which is not yet released. Until it is, depend on Giggly and
-GigRidges by path:
+Add Giggly and GigRidges to your dependencies:
 
 ```elixir
 def deps do
   [
-    {:giggly, path: "../giggly"},
-    {:gig_ridges, path: "../gig_ridges"}
+    {:giggly, "~> 0.2.0"},
+    {:gig_ridges, "~> 0.1.0"}
   ]
 end
 ```
@@ -91,6 +90,6 @@ ggridges package, so they read familiarly to its users. GigRidges is an independ
 implementation from ggridges' documented behaviour, its defaults and computed values checked
 against what ggridges 0.5.7 computes: it contains none of ggridges' code, text or data.
 
-## Licence
+## License
 
 MIT. See `LICENSE`.

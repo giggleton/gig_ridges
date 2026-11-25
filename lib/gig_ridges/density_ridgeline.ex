@@ -17,9 +17,10 @@ defmodule GigRidges.DensityRidgeline do
   the next baseline at a `scale` of 1, whatever height is mapped. Over one baseline, `iscale` is
   1, and the heights are drawn as they are; where the greatest height is 0, a point has no
   `iscale`, and is left out. A point with no baseline is left out and the rest spaced by the
-  baselines given, where ggridges draws none of the layer. The cut-off is taken on the heights
-  scaled.
+  baselines given. The cut-off is taken on the heights scaled.
   """
+
+  # Departure: where a point has no baseline, ggridges draws none of the layer.
 
   use Giggly.Geom
 

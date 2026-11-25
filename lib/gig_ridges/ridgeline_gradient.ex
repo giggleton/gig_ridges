@@ -4,7 +4,7 @@ defmodule GigRidges.RidgelineGradient do
   defaults and legend keys alike, but a ridge whose `fill` varies along it drawn in pieces, one a
   run of points of one fill, from its first point to the next run's, filled and outlined round in
   that fill, `gradient_lwd:` wide in R's line-width units, 0.5 unless given, so the seams do not
-  show, and its top line drawn over them, as ggridges' gradient ridgelines draw one.
+  show, and its top line drawn over them.
   """
 
   use Giggly.Geom

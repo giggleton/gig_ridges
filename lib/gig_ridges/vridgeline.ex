@@ -10,7 +10,7 @@ defmodule GigRidges.VRidgeline do
   off. `scale` and `min_width` are each an option and an aesthetic, as the ridgeline's `scale` and
   `min_height` are: an option given is every point's; else a mapped column gives each point its
   own; else a `scale` of 1 and a `min_width` of 0. Its legend keys take the ribbon's room, twice
-  as wide as their line, as ggridges' vertical ridgeline's do.
+  as wide as their line.
   """
 
   use Giggly.Geom

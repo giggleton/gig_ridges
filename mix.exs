@@ -2,6 +2,7 @@ defmodule GigRidges.MixProject do
   use Mix.Project
 
   @version "0.1.0"
+  @source_url "https://github.com/giggleton/gig_ridges"
 
   def project do
     [
@@ -13,7 +14,9 @@ defmodule GigRidges.MixProject do
       deps: deps(),
       aliases: aliases(),
       description: "Ridgeline plots for Giggly: ridgelines and density ridges.",
-      package: [licenses: ["MIT"]]
+      package: [licenses: ["MIT"], links: %{"GitHub" => @source_url}],
+      source_url: @source_url,
+      docs: [main: "GigRidges", source_ref: "v#{@version}"]
     ]
   end
 
@@ -29,18 +32,17 @@ defmodule GigRidges.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_env), do: ["lib"]
 
-  # Giggly is taken by path from the worktree that holds its plugin API until that API is
-  # released; a Hex release of this package waits for Giggly's. Scales, the colours Giggly reads,
-  # is taken as Giggly takes it, for its documented `Scales.ColorOperations.parse/1`, which checks
-  # a colour a gig_ridges option sets as Giggly checks its own. The paths are absolute, so a git
-  # worktree of this repository, which sits elsewhere, finds them.
+  # Giggly holds the plugin API this package builds on. Scales, the colours Giggly reads, is
+  # taken for its documented `Scales.ColorOperations.parse/1`, which checks a colour a gig_ridges
+  # option sets as Giggly checks its own.
   defp deps do
     [
-      {:giggly, path: "/home/srowley/repos/giggly/.claude/worktrees/next-increment-cf41fe"},
-      {:scales, "~> 0.2.0", path: "/home/srowley/repos/scales"},
+      {:giggly, "~> 0.2.0"},
+      {:scales, "~> 0.2.0"},
       {:nx, "~> 1.0"},
-      {:gig_datasets, path: "/home/srowley/repos/gig_datasets", only: [:dev, :test]},
+      {:gig_datasets, "~> 0.1.0", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       # Pinned exactly: the mutation-testing skill's runner builds mutants through muex's library
       # internals, checked against this version, so an upgrade re-checks the runner.
       {:muex, "== 0.11.3", only: [:dev, :test], runtime: false}

@@ -13,7 +13,7 @@ defmodule GigRidges do
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it. `cyclical_scale/3` and the `scale_*_cyclical/2`
   functions give the ridges values in turn, as alternating fills, through Giggly's manual scales,
-  and `theme_ridges/2` draws everything but the marks as ggridges' `theme_ridges()` does.
+  and `theme_ridges/2` draws everything but the marks plainly, for ridgeline plots.
 
       iex> frame =
       ...>   GigDatasets.mpg()
@@ -144,8 +144,7 @@ defmodule GigRidges do
   @doc """
   Adds the layer `stat_density_ridges/3` adds, from the same mapping and options, but its points
   under `jittered_points:` set up their ridges at random (`GigRidges.PointsSina`) unless another
-  `position:` is given, as ggridges' `geom_density_ridges()` takes `position_points_sina()`,
-  where the stat's stay on their baselines.
+  `position:` is given, where the stat's stay on their baselines.
   """
   @spec geom_density_ridges(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
   def geom_density_ridges(plot, mapping_or_options \\ %{}, options \\ [])
@@ -245,7 +244,7 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot one cyclical scale serving every aesthetic `aesthetics` names, replacing any
-  scale that served one of them, as ggridges' `cyclical_scale()`: `values:`, a list, handed to the
+  scale that served one of them: `values:`, a list, handed to the
   data's values in the order the scale shows them and started again at the first once they run
   out, so the ridges take turns, as `values: ["red", "blue"]` fills five ridges red, blue, red,
   blue and red.
@@ -275,7 +274,7 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot a cyclical fill scale, replacing any fill scale it had: `cyclical_scale/3` serving
-  `:fill`, as ggridges' `scale_fill_cyclical()`.
+  `:fill`.
 
       iex> frame =
       ...>   %{"v" => [0, 1, 2, 0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b c c c)}
@@ -292,20 +291,20 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot a cyclical colour scale, replacing any colour scale it had: `cyclical_scale/3`
-  serving `:color`, as ggridges' `scale_colour_cyclical()`.
+  serving `:color`.
   """
   @spec scale_colour_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_colour_cyclical(%Plot{} = plot, options) when is_list(options),
     do: GigRidges.Cyclical.scale(plot, :color, options, "GigRidges.scale_colour_cyclical/2")
 
-  @doc "The cyclical colour scale `scale_colour_cyclical/2` gives, as ggridges' `scale_color_cyclical()`."
+  @doc "The cyclical colour scale `scale_colour_cyclical/2` gives, under the other spelling."
   @spec scale_color_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_color_cyclical(%Plot{} = plot, options) when is_list(options),
     do: GigRidges.Cyclical.scale(plot, :color, options, "GigRidges.scale_color_cyclical/2")
 
   @doc """
   Gives the plot a cyclical alpha scale, replacing any alpha scale it had: `cyclical_scale/3`
-  serving `:alpha`, as ggridges' `scale_alpha_cyclical()`.
+  serving `:alpha`.
   """
   @spec scale_alpha_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_alpha_cyclical(%Plot{} = plot, options) when is_list(options),
@@ -313,7 +312,7 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot a cyclical line type scale, replacing any line type scale it had:
-  `cyclical_scale/3` serving `:linetype`, as ggridges' `scale_linetype_cyclical()`.
+  `cyclical_scale/3` serving `:linetype`.
   """
   @spec scale_linetype_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_linetype_cyclical(%Plot{} = plot, options) when is_list(options),
@@ -321,7 +320,7 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot a cyclical line width scale, replacing any line width scale it had:
-  `cyclical_scale/3` serving `:linewidth`, as ggridges' `scale_linewidth_cyclical()`.
+  `cyclical_scale/3` serving `:linewidth`.
   """
   @spec scale_linewidth_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_linewidth_cyclical(%Plot{} = plot, options) when is_list(options),
@@ -330,14 +329,14 @@ defmodule GigRidges do
 
   @doc """
   Gives the plot a cyclical size scale, replacing any size scale it had: `cyclical_scale/3`
-  serving `:size`, as ggridges' `scale_size_cyclical()`.
+  serving `:size`.
   """
   @spec scale_size_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_size_cyclical(%Plot{} = plot, options) when is_list(options),
     do: GigRidges.Cyclical.scale(plot, :size, options, "GigRidges.scale_size_cyclical/2")
 
   @doc """
-  Draws everything but the marks as ggridges' `theme_ridges()` does, for ridgeline plots: nothing
+  Draws everything but the marks plainly, for ridgeline plots: nothing
   behind the marks, light grey grid lines and ticks, black text, the axes' titles at the far ends
   of their axes and the y axis's tick labels on their baselines, so each ridge's name sits on it.
 
