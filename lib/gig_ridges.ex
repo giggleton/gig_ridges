@@ -26,9 +26,9 @@ defmodule GigRidges do
   Adds a layer of ridgelines: each group a ridge along `x`, its baseline its `y` and its top
   `scale` times its `height` above it (`GigRidges.Ridgeline`), the rows drawn as they are.
 
-  It needs `:x`, `:y` and `:height`, and takes the ridgeline's options, `scale:`, `min_height:`
-  and `rel_min_height:`, beside Giggly's options for the marks; each of the three may be mapped
-  instead, giving each point its own, an option given beating its mapping.
+  It needs `:x`, `:y` and `:height`, and takes the ridgeline's options, `scale:` and
+  `min_height:`, beside Giggly's options for the marks; each may be mapped instead, giving each
+  point its own, an option given beating its mapping.
 
       iex> frame =
       ...>   %{"x" => [1, 2, 3, 1, 2, 3], "y" => [0, 0, 0, 1, 1, 1], "h" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1]}
@@ -55,9 +55,11 @@ defmodule GigRidges do
   panel's greatest density reaches the next baseline at a `scale:` of 1.
 
   It needs `:x` and `:y`, `y` most often a discrete column whose values name the ridges, and takes
-  the stat's `bandwidth:` and `panel_scaling:` and the ridgeline's options beside Giggly's options
-  for the marks, its `scale:` 1.8 unless given or mapped, so neighbouring ridges overlap; a
-  `scale`, `min_height` or `rel_min_height` mapped is each ridge's own.
+  the stat's `bandwidth:` and `panel_scaling:` and the density ridges' geom's
+  (`GigRidges.DensityRidgeline`) beside Giggly's options for the marks: `scale:`, 1.8 unless given
+  or mapped, so neighbouring ridges overlap, and `rel_min_height:`, the share of the layer's
+  greatest height below which a point is left out, in place of the ridgeline's `min_height:`. A
+  `scale` or `rel_min_height` mapped is each ridge's own.
   """
   @spec stat_density_ridges(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
   def stat_density_ridges(plot, mapping_or_options \\ %{}, options \\ [])

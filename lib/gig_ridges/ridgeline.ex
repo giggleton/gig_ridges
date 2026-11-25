@@ -4,13 +4,13 @@ defmodule GigRidges.Ridgeline do
   its `height` above it, filled down to the baseline and outlined along the top, drawn back to
   front so a lower ridge is drawn over the one above it.
 
-  A point whose height is below the cut-off is left out of its ridge, which breaks there: the
-  cut-off is the larger of `min_height` and `rel_min_height` times the layer's greatest height.
+  A point whose height is below `min_height` is left out of its ridge, which breaks there; with no
+  `min_height`, a point below 0 is. The density ridges' geom (`GigRidges.DensityRidgeline`) cuts
+  at `rel_min_height` times the layer's greatest height, across every panel, in its place.
 
-  `scale`, `min_height` and `rel_min_height` are each an option and an aesthetic: given as an
-  option, its value is every point's; else a mapped column gives each point its own; else its
-  default, a `scale` of 1, which the density ridges' geom (`GigRidges.DensityRidgeline`) makes 1.8,
-  and no cut-off.
+  `scale` and `min_height` are each an option and an aesthetic: given as an option, its value is
+  every point's; else a mapped column gives each point its own; else its default, a `scale` of 1,
+  which the density ridges' geom makes 1.8, and a `min_height` of 0.
 
   It draws by delegation to Giggly's ribbon (`Giggly.Geom.Ribbon`): its setup works out each
   point's `ymin` and `ymax` and hands the rows to the ribbon's setup, and each ridge is drawn by the
@@ -21,14 +21,23 @@ defmodule GigRidges.Ridgeline do
 
   alias Giggly.{DataFrame, Geom}
 
-  # `unmapped_scale` is no option: the scale a point takes where neither the option nor a mapping
-  # gives one, 1 here and 1.8 under the density ridges' geom, which builds the struct itself.
-  defstruct scale: :none, min_height: :none, rel_min_height: :none, unmapped_scale: 1.0
+  # `cut_off`, `rel_min_height` and `unmapped_scale` are no options of the ridgeline's, but set by
+  # the density ridges' geom, which builds the struct itself: the aesthetic a point is cut off by,
+  # `:min_height` here and `:rel_min_height` there, a share of the layer's greatest height, given
+  # or mapped there; and the scale a point takes where neither the option nor a mapping gives one,
+  # 1 here and 1.8 there. The cut-off it is not cut by is ignored, mapped or not, as ggridges'
+  # ridgeline ignores `rel_min_height` and its density ridges `min_height`.
+  defstruct scale: :none,
+            min_height: :none,
+            rel_min_height: :none,
+            cut_off: :min_height,
+            unmapped_scale: 1.0
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           min_height: :none | float(),
           rel_min_height: :none | float(),
+          cut_off: :min_height | :rel_min_height,
           unmapped_scale: float()
         }
 
@@ -47,28 +56,19 @@ defmodule GigRidges.Ridgeline do
         default: :none,
         doc:
           "The height below which a point is left out of its ridge, every point's, over a " <>
-            "mapped `min_height`; none where neither gives one."
-      ],
-      rel_min_height: [
-        type: {:custom, __MODULE__, :validate_share, []},
-        default: :none,
-        doc:
-          "The height below which a point is left out of its ridge, as a share of the layer's " <>
-            "greatest height, from 0 to 1, every point's, over a mapped `rel_min_height`; none " <>
-            "where neither gives one."
+            "mapped `min_height`; 0 where neither gives one."
       ]
     ]
   end
 
   @impl Giggly.Geom
-  def accepted_aesthetics(_geom),
+  def accepted_aesthetics(%__MODULE__{cut_off: cut_off}),
     do: [
       :x,
       :y,
       :height,
       :scale,
-      :min_height,
-      :rel_min_height,
+      cut_off,
       :group,
       :alpha,
       :color,
@@ -81,12 +81,11 @@ defmodule GigRidges.Ridgeline do
   def required_aesthetics(_geom), do: [:x, :y, :height]
 
   @impl Giggly.Geom
-  def numeric_aesthetics(_geom),
+  def numeric_aesthetics(%__MODULE__{cut_off: cut_off}),
     do: [
-      height: "it is how far each ridge reaches above its y",
-      scale: "it is how many times its height each point reaches",
-      min_height: "it is the height below which a point is left out",
-      rel_min_height: "it is the share of the greatest height below which a point is left out"
+      {:height, "it is how far each ridge reaches above its y"},
+      {:scale, "it is how many times its height each point reaches"},
+      {cut_off, cut_off_reason(cut_off)}
     ]
 
   @impl Giggly.Geom
@@ -103,15 +102,6 @@ defmodule GigRidges.Ridgeline do
   def validate_number(:none), do: {:ok, :none}
   def validate_number(number) when is_number(number), do: {:ok, number / 1}
   def validate_number(other), do: {:error, "expected a number, got: #{inspect(other)}"}
-
-  @doc false
-  @spec validate_share(term()) :: {:ok, :none | float()} | {:error, String.t()}
-  def validate_share(:none), do: {:ok, :none}
-
-  def validate_share(share) when is_number(share) and share >= 0 and share <= 1,
-    do: {:ok, share / 1}
-
-  def validate_share(other), do: {:error, "expected a number from 0 to 1, got: #{inspect(other)}"}
 
   # The ribbon's defaults, but a fill of R's grey70 and a black top line half a millimetre wide,
   # whatever the theme's ink and paper, as ggridges' ridgelines take them. A theme's geom fill and
@@ -134,14 +124,12 @@ defmodule GigRidges.Ridgeline do
         DataFrame.pull(frame, :y),
         heights,
         each_point(ridgeline.scale, frame, :scale, ridgeline.unmapped_scale),
-        each_point(ridgeline.min_height, frame, :min_height, 0.0),
-        each_point(ridgeline.rel_min_height, frame, :rel_min_height, 0.0)
+        cut_offs(ridgeline, frame, greatest)
       ]
-      |> Enum.zip_with(fn [baseline, height, scale, least, share] ->
-        if Enum.all?([baseline, height, scale, least, share], &is_number/1) and
-             height >= max(least, share * greatest),
-           do: {baseline, baseline + scale * height},
-           else: {nil, nil}
+      |> Enum.zip_with(fn [baseline, height, scale, least] ->
+        if Enum.all?([baseline, height, scale, least], &is_number/1) and height >= least,
+          do: {baseline, baseline + scale * height},
+          else: {nil, nil}
       end)
       |> Enum.unzip()
 
@@ -175,6 +163,26 @@ defmodule GigRidges.Ridgeline do
     |> Enum.filter(&is_number/1)
     |> Enum.max(fn -> 0.0 end)
   end
+
+  # Each point's cut-off, the height below which it is left out: its `min_height`, 0 where none is
+  # given or mapped; or, under the density ridges' geom, its `rel_min_height` times the layer's
+  # greatest height, 0 where none is.
+  defp cut_offs(%__MODULE__{cut_off: :min_height} = ridgeline, frame, _greatest),
+    do: each_point(ridgeline.min_height, frame, :min_height, 0.0)
+
+  defp cut_offs(%__MODULE__{cut_off: :rel_min_height} = ridgeline, frame, greatest) do
+    ridgeline.rel_min_height
+    |> each_point(frame, :rel_min_height, 0.0)
+    |> Enum.map(fn
+      share when is_number(share) -> share * greatest
+      missing -> missing
+    end)
+  end
+
+  defp cut_off_reason(:min_height), do: "it is the height below which a point is left out"
+
+  defp cut_off_reason(:rel_min_height),
+    do: "it is the share of the greatest height below which a point is left out"
 
   # Each point's value of `name`: the option's where given, else the mapped column's, else the
   # default, as ggplot2 lays a set value over a mapped one and fills an unmapped one.

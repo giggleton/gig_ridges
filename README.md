@@ -38,9 +38,9 @@ GigDatasets.mpg()
   given or mapped, so neighbouring ridges overlap.
 
 Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`,
-`linetype:`, `position:`) beside its own: `scale:`, `min_height:` and `rel_min_height:` for the
-ridges, each of which may be mapped instead, and `bandwidth:` and `panel_scaling:` for the
-density.
+`linetype:`, `position:`) beside its own: `scale:` for the ridges, with `min_height:` for the
+ridgeline and `rel_min_height:`, a share of the layer's greatest height, for the density ridges,
+each of which may be mapped instead, and `bandwidth:` and `panel_scaling:` for the density.
 
 ## Relationship to ggridges
 

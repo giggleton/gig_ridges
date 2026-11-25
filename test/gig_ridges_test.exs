@@ -23,14 +23,34 @@ defmodule GigRidgesTest do
       assert DataFrame.pull(frame, :ymax) == [0.2, 0.9, 0.3, 1.5, 1.4, 1.1]
     end
 
-    test "leaves out a point below the cut-off, min_height or rel_min_height of the greatest" do
-      plot = Plot.new(@ridges, %{x: :x, y: :y, height: :h, group: :y})
+    test "leaves out a point below its min_height" do
+      frame =
+        @ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline(min_height: 0.3)
+        |> Giggly.layer_data()
 
-      by_height = plot |> GigRidges.geom_ridgeline(min_height: 0.3) |> Giggly.layer_data()
-      assert DataFrame.pull(by_height, :ymax) == [nil, 0.9, 0.3, 1.5, 1.4, nil]
+      assert DataFrame.pull(frame, :ymax) == [nil, 0.9, 0.3, 1.5, 1.4, nil]
+    end
 
-      by_share = plot |> GigRidges.geom_ridgeline(rel_min_height: 0.5) |> Giggly.layer_data()
-      assert DataFrame.pull(by_share, :ymax) == [nil, 0.9, nil, 1.5, nil, nil]
+    # ggridges 0.5.7 on ggplot2 4.0.3: `geom_ridgeline()` has no `rel_min_height`; given, it is
+    # "Ignoring unknown parameters", and mapped it leaves out nothing it draws. Departure: given, it
+    # is refused, as Giggly refuses an option a layer does not take.
+    test "takes no rel_min_height, refusing it given and ignoring it mapped" do
+      assert_raise NimbleOptions.ValidationError, ~r/unknown options \[:rel_min_height\]/, fn ->
+        @ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline(rel_min_height: 0.5)
+      end
+
+      frame =
+        @ridges
+        |> Map.put("r", List.duplicate(0.5, 6))
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y, rel_min_height: :r})
+        |> GigRidges.geom_ridgeline()
+        |> Giggly.layer_data()
+
+      assert DataFrame.pull(frame, :ymax) == [0.2, 0.9, 0.3, 1.5, 1.4, 1.1]
     end
 
     test "draws the highest baseline first, so a lower ridge is drawn over the one above" do
@@ -321,7 +341,7 @@ defmodule GigRidgesTest do
       end
     end
 
-    test "takes the ridgeline's options as given, every ridge's", %{plot: plot} do
+    test "takes a scale and rel_min_height given, every ridge's", %{plot: plot} do
       frame =
         plot
         |> GigRidges.geom_density_ridges(scale: 1, rel_min_height: 0.5)
@@ -342,6 +362,58 @@ defmodule GigRidgesTest do
       assert Float.round(Enum.max(kept), 12) == 1.0
       assert Enum.min(kept) >= 0.5
       assert length(kept) < length(reaches)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges(bandwidth = 1,
+    # rel_min_height = 0.5)` over a tight group a (x -1, -0.5, 0, 0, 0.5, 1) and a wide group b
+    # (x -9, -6, -3, 0, 3, 6, 9), counting the places of each ridge's drawn top line: in one
+    # panel a keeps 60 of its 512 and b none, b's peak under half of a's, so the cut-off is not
+    # each group's own; faceted by group with `panel_scaling = FALSE`, a keeps 182 of the 512 its
+    # narrower panel spans and b still none, so it is not each panel's either, but the layer's.
+    test "cuts off by rel_min_height of the layer's greatest height, every panel's" do
+      frame = %{
+        "v" => [-1, -0.5, 0, 0, 0.5, 1, -9, -6, -3, 0, 3, 6, 9],
+        "g" => List.duplicate("a", 6) ++ List.duplicate("b", 7)
+      }
+
+      plot = Plot.new(frame, %{x: :v, y: :g})
+
+      kept = fn layered ->
+        layered
+        |> Giggly.layer_data()
+        |> DataFrame.split(:group)
+        |> Enum.sort()
+        |> Enum.map(fn {_group, rows} ->
+          rows |> DataFrame.pull(:ymax) |> Enum.count(&is_number/1)
+        end)
+      end
+
+      one_panel = GigRidges.geom_density_ridges(plot, bandwidth: 1, rel_min_height: 0.5)
+      assert kept.(one_panel) == [60, 0]
+
+      faceted =
+        plot
+        |> GigRidges.geom_density_ridges(bandwidth: 1, rel_min_height: 0.5, panel_scaling: false)
+        |> Plot.facet_wrap(:g)
+
+      assert kept.(faceted) == [182, 0]
+    end
+
+    # ggridges 0.5.7 on ggplot2 4.0.3: `geom_density_ridges()` has no `min_height`; given, it is
+    # "Ignoring unknown parameters". Departure: given, it is refused, as Giggly refuses an option a
+    # layer does not take; mapped, it is ignored, every place kept.
+    test "takes no min_height, refusing it given and ignoring it mapped", %{plot: plot} do
+      assert_raise NimbleOptions.ValidationError, ~r/unknown options \[:min_height\]/, fn ->
+        GigRidges.geom_density_ridges(plot, min_height: 0.01)
+      end
+
+      frame =
+        GigDatasets.mpg()
+        |> Plot.new(%{x: :hwy, y: :class, min_height: {fn _class -> 1.0e6 end, [:class]}})
+        |> GigRidges.geom_density_ridges()
+        |> Giggly.layer_data()
+
+      assert Enum.all?(DataFrame.pull(frame, :ymax), &is_number/1)
     end
 
     test "gives each density as a share of its group's greatest, its ndensity", %{plot: plot} do

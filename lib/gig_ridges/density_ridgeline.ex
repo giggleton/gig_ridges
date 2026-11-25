@@ -1,34 +1,45 @@
 defmodule GigRidges.DensityRidgeline do
   @moduledoc """
-  The density ridges' geom: the ridgeline (`GigRidges.Ridgeline`), its options and aesthetics
-  alike, but each point 1.8 times its `height` above its baseline where neither the `scale:`
-  option nor a mapped `scale` gives another, so neighbouring ridges overlap.
+  The density ridges' geom: the ridgeline (`GigRidges.Ridgeline`), but each point 1.8 times its
+  `height` above its baseline where neither the `scale:` option nor a mapped `scale` gives
+  another, so neighbouring ridges overlap, and cut off by `rel_min_height` in place of
+  `min_height`.
+
+  A point whose height is below `rel_min_height` times the layer's greatest height, across every
+  panel, is left out of its ridge, which breaks there. Like `scale`, `rel_min_height` is an option
+  and an aesthetic: given as an option, a share from 0 to 1, its value is every point's; else a
+  mapped column gives each point its own; else 0, and no point is left out.
   """
 
   use Giggly.Geom
 
   alias GigRidges.Ridgeline
 
-  defstruct scale: :none, min_height: :none, rel_min_height: :none
+  defstruct scale: :none, rel_min_height: :none
 
-  @type t :: %__MODULE__{
-          scale: :none | float(),
-          min_height: :none | float(),
-          rel_min_height: :none | float()
-        }
+  @type t :: %__MODULE__{scale: :none | float(), rel_min_height: :none | float()}
 
   @unmapped_scale 1.8
 
   @impl Giggly.Geom
   def options do
-    Keyword.update!(Ridgeline.options(), :scale, fn spec ->
-      Keyword.put(
-        spec,
-        :doc,
-        "How many times its `height` each ridge reaches above its baseline, a number above 0, " <>
-          "every point's, over a mapped `scale`; 1.8 where neither gives one."
-      )
-    end)
+    [
+      scale:
+        Keyword.put(
+          Keyword.fetch!(Ridgeline.options(), :scale),
+          :doc,
+          "How many times its `height` each ridge reaches above its baseline, a number above 0, " <>
+            "every point's, over a mapped `scale`; 1.8 where neither gives one."
+        ),
+      rel_min_height: [
+        type: {:custom, __MODULE__, :validate_share, []},
+        default: :none,
+        doc:
+          "The height below which a point is left out of its ridge, as a share of the layer's " <>
+            "greatest height, from 0 to 1, every point's, over a mapped `rel_min_height`; 0 " <>
+            "where neither gives one."
+      ]
+    ]
   end
 
   @impl Giggly.Geom
@@ -54,8 +65,23 @@ defmodule GigRidges.DensityRidgeline do
   @impl Giggly.Geom
   def key_size(geom, key, context), do: Ridgeline.key_size(ridgeline(geom), key, context)
 
-  # The ridgeline this geom draws through, its options this one's and its unmapped scale 1.8.
+  @doc false
+  @spec validate_share(term()) :: {:ok, :none | float()} | {:error, String.t()}
+  def validate_share(:none), do: {:ok, :none}
+
+  def validate_share(share) when is_number(share) and share >= 0 and share <= 1,
+    do: {:ok, share / 1}
+
+  def validate_share(other), do: {:error, "expected a number from 0 to 1, got: #{inspect(other)}"}
+
+  # The ridgeline this geom draws through: its options this one's, cut off by `rel_min_height`,
+  # and its unmapped scale 1.8.
   defp ridgeline(%__MODULE__{} = geom) do
-    struct!(Ridgeline, geom |> Map.from_struct() |> Map.put(:unmapped_scale, @unmapped_scale))
+    fields =
+      geom
+      |> Map.from_struct()
+      |> Map.merge(%{cut_off: :rel_min_height, unmapped_scale: @unmapped_scale})
+
+    struct!(Ridgeline, fields)
   end
 end
