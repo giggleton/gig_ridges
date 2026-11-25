@@ -77,6 +77,12 @@ turn, starting again once they run out, as `scale_fill_cyclical(values: ["red", 
 them alternately, with no legend unless `guide: :legend` asks for one, its keys chosen by
 `breaks:` and labelled by `labels:`. They are Giggly's manual scales, their values repeated.
 
+`GigRidges.theme_ridges/2` draws everything but the marks as ggridges' `theme_ridges()` does:
+nothing behind the marks, light grey grid lines and ticks, black text, the axes' titles at the
+far ends of their axes and each ridge's name on its baseline, taking `font_size:`,
+`font_family:`, `line_size:`, `grid:` and `center_axis_labels:`. Given a plot it replaces its
+theme, and given its options alone it returns the theme, as Giggly's complete themes do.
+
 ## Relationship to ggridges
 
 The idea of the ridgeline plot, and the names of these functions and their options, follow R's

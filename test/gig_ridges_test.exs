@@ -2913,6 +2913,146 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "theme_ridges/2" do
+    defp ridged(theme) do
+      @spread
+      |> Plot.new(%{x: :v, y: :g})
+      |> GigRidges.geom_density_ridges(bandwidth: 1)
+      |> Plot.labs(title: "Title", x: "value", y: "group")
+      |> theme.()
+      |> Giggly.to_svg()
+      |> IO.iodata_to_binary()
+    end
+
+    # Each element of `svg` whose tag is `tag` and that holds `held`.
+    defp elements(svg, tag, held),
+      do:
+        ~r/<#{tag}\b[^>]*>(?:[^<]*<\/#{tag}>)?/
+        |> Regex.scan(svg)
+        |> List.flatten()
+        |> Enum.filter(&(&1 =~ held))
+
+    defp text(svg, label), do: svg |> elements("text", ">#{label}<") |> hd()
+
+    defp attribute(element, name),
+      do: ~r/#{name}[=:] ?'?([^';]+)/ |> Regex.run(element) |> List.last()
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `theme_ridges()` against `theme_grey()`, each
+    # element resolved: no panel, plot or legend-key background; the major grid lines and ticks
+    # grey90, 0.5 mm wide, no minor grid; the tick labels black at 11.998 points, 14 times six
+    # sevenths, the axes' titles 14, at the far ends of their axes (hjust 1), the y axis's tick
+    # labels on their baselines (vjust 0); the plot's title bold at 14; drawn alike by ggridges
+    # and here over the same data, side by side.
+    test "draws nothing behind the marks, light grid lines, and each ridge's name on it" do
+      svg = ridged(&GigRidges.theme_ridges/1)
+      grid = elements(svg, "polyline", "stroke: #E5E5E5")
+
+      # Two grid lines and two ticks for the ridges, five of each for the x axis's breaks.
+      assert length(grid) == 2 * (2 + 5)
+      assert Enum.all?(grid, &(attribute(&1, "stroke-width") == "1.07"))
+      refute svg =~ "fill: #EBEBEB"
+
+      for label <- ["-5", "0", "a", "b"] do
+        assert attribute(text(svg, label), "font-size") == "12.00px"
+        refute text(svg, label) =~ "fill:"
+      end
+
+      for label <- ["value", "group"] do
+        assert attribute(text(svg, label), "font-size") == "14.00px"
+        assert attribute(text(svg, label), "text-anchor") == "end"
+      end
+
+      assert text(svg, "Title") =~ "font-weight: bold"
+      assert attribute(text(svg, "Title"), "font-size") == "14.00px"
+
+      baselines =
+        grid
+        |> Enum.map(&Regex.run(~r/points='[0-9.]+,([0-9.]+) [0-9.]+,\1 '/, &1))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.map(&List.last/1)
+        |> Enum.uniq()
+
+      assert Enum.sort(baselines) ==
+               Enum.sort(for(label <- ["a", "b"], do: attribute(text(svg, label), " y")))
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: `theme_ridges(grid = FALSE)` without the major
+    # grid lines and the y axis's ticks, its x axis's ticks black; `center_axis_labels = TRUE` the
+    # axes' titles centred (hjust 0.5); `font_size = 20` every size by 20 / 14, the tick labels
+    # 17.14 and the titles 20; `line_size = 1` the grid lines and ticks 1 mm wide; `font_family =
+    # "serif"` every text serif.
+    test "takes away the grid, centres the titles, and sizes its text, lines and font" do
+      bare = ridged(&GigRidges.theme_ridges(&1, grid: false, center_axis_labels: true))
+      assert elements(bare, "polyline", "stroke: #E5E5E5") == []
+      # The x axis's five ticks and the two ridges' top lines, no tick on the y axis.
+      assert length(elements(bare, "polyline", "stroke: #000000; stroke-linecap: butt")) == 5 + 2
+
+      for label <- ["value", "group"],
+          do: assert(attribute(text(bare, label), "text-anchor") == "middle")
+
+      big = ridged(&GigRidges.theme_ridges(&1, font_size: 20))
+      assert attribute(text(big, "a"), "font-size") == "17.14px"
+      assert attribute(text(big, "value"), "font-size") == "20.00px"
+
+      wide = ridged(&GigRidges.theme_ridges(&1, line_size: 1))
+
+      assert Enum.all?(
+               elements(wide, "polyline", "stroke: #E5E5E5"),
+               &(attribute(&1, "stroke-width") == "2.13")
+             )
+
+      serif = ridged(&GigRidges.theme_ridges(&1, font_family: "serif"))
+      assert attribute(text(serif, "value"), "font-family") == "serif"
+      assert attribute(text(serif, "a"), "font-family") == "serif"
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `theme_ridges()`: the strips grey80 with no border
+    # and no margin round their labels, 11.998 points; the subtitle, the caption and the legends'
+    # labels 11.998, the legends' titles 14; no legend key background; and the plot's margin 7
+    # points, 14 on the right, where the legend's box ends.
+    test "draws the strips, the legend and the plot's margin as ggridges does" do
+      svg =
+        %{"v" => [0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b)}
+        |> Plot.new(%{x: :v, y: :g, fill: :g})
+        |> GigRidges.geom_density_ridges(bandwidth: 1)
+        |> Plot.facet_wrap(:g)
+        |> Plot.labs(subtitle: "Sub", caption: "Cap")
+        |> GigRidges.theme_ridges()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+
+      strips = elements(svg, "rect", "fill: #CCCCCC")
+      assert length(strips) == 2
+      assert Enum.all?(strips, &(&1 =~ "stroke: none"))
+      [strip_label | _labels] = elements(svg, "text", ">a<")
+      assert attribute(strip_label, "font-size") == "12.00px"
+      assert Enum.all?(strips, &(attribute(&1, "height") == "10.75"))
+
+      for label <- ["Sub", "Cap"],
+          do: assert(attribute(text(svg, label), "font-size") == "12.00px")
+
+      [box] = elements(svg, "rect", "fill: none")
+      [width] = Regex.run(~r/<svg [^>]*viewBox='0 0 ([0-9.]+)/, svg, capture: :all_but_first)
+      right = String.to_float(attribute(box, " x")) + String.to_float(attribute(box, "width"))
+      # 14 of ggplot2's points, 1/72.27 inch each, in the SVG's points.
+      assert_in_delta String.to_float(width) - right, 14 * 72 / 72.27, 0.01
+      assert length(elements(svg, "rect", "stroke: #000000")) == 2
+    end
+
+    test "gives its theme alone, to be laid over a plot, as Giggly's complete themes do" do
+      kept = GigRidges.theme_ridges(grid: false)
+      assert ridged(&Plot.theme(&1, kept)) == ridged(&GigRidges.theme_ridges(&1, grid: false))
+    end
+
+    test "refuses a size below 0 and an option it does not take" do
+      for {option, value} <- [font_size: -1, line_size: "wide", grid: "yes", colour: "red"] do
+        assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+          GigRidges.theme_ridges([{option, value}])
+        end
+      end
+    end
+  end
+
   describe "cyclical scales" do
     # Five ridges, their levels a to e, given out of order.
     @five %{

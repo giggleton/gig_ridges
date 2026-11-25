@@ -12,7 +12,8 @@ defmodule GigRidges do
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it. `cyclical_scale/3` and the `scale_*_cyclical/2`
-  functions give the ridges values in turn, as alternating fills, through Giggly's manual scales.
+  functions give the ridges values in turn, as alternating fills, through Giggly's manual scales,
+  and `theme_ridges/2` draws everything but the marks as ggridges' `theme_ridges()` does.
 
       iex> frame =
       ...>   GigDatasets.mpg()
@@ -334,6 +335,39 @@ defmodule GigRidges do
   @spec scale_size_cyclical(Plot.t(), keyword()) :: Plot.t()
   def scale_size_cyclical(%Plot{} = plot, options) when is_list(options),
     do: GigRidges.Cyclical.scale(plot, :size, options, "GigRidges.scale_size_cyclical/2")
+
+  @doc """
+  Draws everything but the marks as ggridges' `theme_ridges()` does, for ridgeline plots: nothing
+  behind the marks, light grey grid lines and ticks, black text, the axes' titles at the far ends
+  of their axes and the y axis's tick labels on their baselines, so each ridge's name sits on it.
+
+  Given a plot, it replaces the plot's theme whole, as `Giggly.Plot.theme_gray/2` does; given its
+  options alone, it returns the theme, to be kept and given to plots with `Giggly.Plot.theme/2`.
+  It is Giggly's default theme at a base size of `font_size:`, with its settings laid over it, so
+  a later `Giggly.Plot.theme/2` call is laid over it in turn.
+
+  ## Options
+
+  #{NimbleOptions.docs(GigRidges.RidgesTheme.options())}
+
+      iex> svg =
+      ...>   %{"v" => [0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b)}
+      ...>   |> Giggly.Plot.new(%{x: :v, y: :g})
+      ...>   |> GigRidges.geom_density_ridges(bandwidth: 1)
+      ...>   |> GigRidges.theme_ridges(grid: false)
+      ...>   |> Giggly.to_svg()
+      ...>   |> IO.iodata_to_binary()
+      iex> svg =~ "#E5E5E5"
+      false
+  """
+  @spec theme_ridges(Plot.t() | keyword(), keyword()) :: Plot.t() | term()
+  def theme_ridges(plot_or_options \\ [], options \\ [])
+
+  def theme_ridges(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.RidgesTheme.theme(plot, options)
+
+  def theme_ridges(options, []) when is_list(options),
+    do: GigRidges.RidgesTheme.theme(nil, options)
 
   # A layer of density ridges, drawn by the density ridges' geom, 1.8 times their height unless
   # `scale` is given or mapped.
