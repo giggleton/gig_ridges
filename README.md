@@ -4,8 +4,9 @@ Ridgeline plots for [Giggly](https://github.com/giggleton/giggly), the grammar-o
 library for Elixir: ridges along `x`, one above each baseline, each group's distribution or series
 drawn so the ridges overlap.
 
-It is also a worked example of a Giggly plugin: a stat and a geom of its own, layer functions of
-its own built on `Giggly.Plot.layer/3`, and a geom drawing by delegation to Giggly's ribbon.
+It is also a worked example of a Giggly plugin: stats, geoms and positions of its own, layer
+functions built on `Giggly.Plot.layer/3`, geoms drawing by delegation to Giggly's ribbon, segment
+and point geoms, and scales and a theme built from Giggly's public scale and theme functions.
 
 ## Installation
 

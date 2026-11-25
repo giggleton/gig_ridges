@@ -1,8 +1,9 @@
 # gig_ridges
 
-Ridgeline plots for Giggly, as a Giggly plugin: a density-ridges stat, a ridgeline geom and a
-density-ridgeline geom, with layer functions on `GigRidges` (README says what each draws). It
-takes Giggly by path from the worktree that holds Giggly's plugin API (`mix.exs`); Giggly is worked
+Ridgeline plots for Giggly, as a Giggly plugin: the density-ridges and binline stats; the
+ridgeline, density-ridgeline, outlined, gradient, vertical and density-line geoms; the jittered
+points' sina, jitter and raincloud positions; cyclical scales and a ridges theme, all on
+`GigRidges` (README says what each draws). It takes Giggly by path from the worktree that holds Giggly's plugin API (`mix.exs`); Giggly is worked
 on in its own session, never edited from here.
 
 ## Working here
