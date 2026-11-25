@@ -2954,8 +2954,10 @@ defmodule GigRidgesTest do
       shares = jittered({GigRidges.PointsSina, rel_min: 0.25, rel_max: 0.75}) |> shares()
       assert close_to?(shares, Enum.map(draws, &(0.25 + 0.5 * &1)))
 
-      halves = jittered({GigRidges.PointsSina, rel_min: 0.5, rel_max: 0.5}) |> shares()
-      assert close_to?(halves, List.duplicate(0.5, 13))
+      for share <- [0, 0.5, 1] do
+        set = jittered({GigRidges.PointsSina, rel_min: share, rel_max: share}) |> shares()
+        assert close_to?(set, List.duplicate(share, 13))
+      end
 
       sina = {GigRidges.PointsSina, seed: 7}
       assert shares(jittered(sina)) == shares(jittered(sina))
