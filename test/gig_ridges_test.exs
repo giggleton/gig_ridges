@@ -1010,6 +1010,90 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, the legend keys of `geom_ridgeline()`,
+    # `geom_density_ridges()` and `geom_density_ridges2()` at a `linewidth` of 6, 7, 10 and 20:
+    # 17.345, the theme's least, then 19.917, 28.453 and 56.906 TeX points, a square as wide as the
+    # line, where ggplot2's ribbon keys take twice that; in Giggly's points 17.28, 19.84, 28.35
+    # and 56.69.
+    test "gives each legend key room as wide as its line, as ggridges does" do
+      ridges = Plot.new(@spread, %{x: :v, y: :g, fill: :g})
+
+      ridgeline =
+        @ridges
+        |> Map.put("g", ~w(a a a b b b))
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :g, fill: :g})
+
+      layers = [
+        fn width -> GigRidges.geom_ridgeline(ridgeline, linewidth: width) end,
+        fn width -> GigRidges.geom_density_ridges(ridges, bandwidth: 1, linewidth: width) end,
+        fn width -> GigRidges.geom_density_ridges2(ridges, bandwidth: 1, linewidth: width) end
+      ]
+
+      for layer <- layers do
+        sides =
+          for width <- [6, 7, 10, 20] do
+            width
+            |> layer.()
+            |> Giggly.to_svg()
+            |> IO.iodata_to_binary()
+            |> then(
+              &Regex.scan(
+                ~r/width='([0-9.]+)' height='([0-9.]+)' style='[^']*fill: #EBEBEB;'/,
+                &1
+              )
+            )
+            |> Enum.flat_map(fn
+              [_key, side, side] -> [side]
+              [_panel, _width, _height] -> []
+            end)
+            |> Enum.uniq()
+          end
+
+        assert sides == [["17.28"], ["19.84"], ["28.35"], ["56.69"]]
+
+        glyphs = 6 |> layer.() |> Giggly.to_svg() |> IO.iodata_to_binary()
+
+        assert length(
+                 Regex.scan(~r/<rect [^>]*stroke: #000000[^>]*fill: #(F8766D|00BFC4)/, glyphs)
+               ) == 2
+      end
+    end
+
+    test "takes its mapping in its own call or the plot's, and no options" do
+      plot = Plot.new(@spread, %{})
+
+      plain = plot |> Plot.aes(%{x: :v, y: :g}) |> GigRidges.geom_density_ridges2()
+
+      assert DataFrame.row_count(Giggly.layer_data(plain)) == 1024
+
+      cut =
+        @spread
+        |> Map.put("r", List.duplicate(0.5, 13))
+        |> Plot.new(%{})
+        |> GigRidges.geom_density_ridges2(%{x: :v, y: :g, rel_min_height: :r})
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+        |> Enum.count(&is_number/1)
+
+      assert cut < 1024
+    end
+
+    test "refuses what the density ridges' geom refuses, naming itself" do
+      assert_raise ArgumentError, ~r/^GigRidges.geom_density_ridges2\/3 maps :scale to "g"/, fn ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g, scale: :g})
+        |> GigRidges.geom_density_ridges2()
+        |> Giggly.layer_data()
+      end
+
+      assert_raise ArgumentError, ~r/height/, fn ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> Plot.layer(%{}, stat: :identity, geom: GigRidges.DensityRidgeline2)
+        |> Giggly.layer_data()
+      end
+    end
+
     test "takes the density ridges' options and names itself in its refusals" do
       plot = Plot.new(@spread, %{x: :v, y: :g})
 

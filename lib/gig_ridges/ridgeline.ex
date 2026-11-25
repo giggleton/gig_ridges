@@ -15,12 +15,16 @@ defmodule GigRidges.Ridgeline do
 
   It draws by delegation to Giggly's ribbon (`Giggly.Geom.Ribbon`): its setup works out each
   point's `ymin` and `ymax` and hands the rows to the ribbon's setup, and each ridge is drawn by the
-  ribbon, as is its legend key.
+  ribbon, as is its legend key, which needs room as wide as its line, as ggridges' keys do, where
+  the ribbon's needs twice that.
   """
 
   use Giggly.Geom
 
   alias Giggly.{DataFrame, Geom}
+
+  # Points, 1/72 inch, in a millimetre, as key sizes are given.
+  @points_per_millimetre 72 / 25.4
 
   # `cut_off`, `rel_min_height` and `unmapped_scale` are no options of the ridgeline's, but set by
   # the density ridges' geom, which builds the struct itself: the aesthetic a point is cut off by,
@@ -165,7 +169,17 @@ defmodule GigRidges.Ridgeline do
   @impl Giggly.Geom
   def draw_key(ridgeline, key, context), do: Geom.draw_key(ribbon(ridgeline), key, context)
   @impl Giggly.Geom
-  def key_size(ridgeline, key, context), do: Geom.key_size(ribbon(ridgeline), key, context)
+  # The room a key needs: a square as wide as its line, as ggridges' keys take it, where the
+  # ribbon's takes twice that, as ggplot2's polygon keys do.
+  def key_size(_ridgeline, key, _context) do
+    side =
+      case Map.fetch!(key, :linewidth) do
+        nil -> 0.0
+        line_width -> line_width * @points_per_millimetre
+      end
+
+    {side, side}
+  end
 
   # Each point's height, times its `iscale` under the density ridges' geom; missing where either
   # is.
