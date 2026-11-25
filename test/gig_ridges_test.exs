@@ -1472,7 +1472,7 @@ defmodule GigRidgesTest do
                [0, 0, 0, 0, 4, 4, 2, 2, 0, 0, 0, 0]
              ]
 
-      [density, ncount] = binned([bins: 4], [:density, :ncount])
+      [density, ncount, ndensity] = binned([bins: 4], [:density, :ncount, :ndensity])
 
       assert density == [
                0.0,
@@ -1490,6 +1490,7 @@ defmodule GigRidgesTest do
              ]
 
       assert ncount == [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]
+      assert ndensity == ncount
 
       [_a, [b_ymax]] =
         @spread
@@ -1613,6 +1614,178 @@ defmodule GigRidgesTest do
       assert spans.(:fixed) == [{-18.0, 17.99994, 12}, {-18.0, 17.99994, 12}]
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, group a of @spread, `breaks = c(-2, 0, 2)`: its 0s,
+    # on a break, in (-2, 0] closed on the right, 4 there and 2 in (0, 2], and in [0, 2) closed
+    # on the left, 2 in [-2, 0) and 4 there; under `breaks = c(-2, 0, 1)` closed on the left its
+    # 1, on the last break, in the last bin, [0, 1], 4 there; the breaks given out of order binned
+    # as sorted.
+    test "puts a value on a break in the bin closed on its side" do
+      places = [-4.0, -2.00002, -2.0, -2.0e-5, 0.0, 1.99998, 2.0, 3.99998]
+
+      assert binned(breaks: [-2, 0, 2], closed: :right) == [places, [0, 0, 4, 4, 2, 2, 0, 0]]
+      assert binned(breaks: [-2, 0, 2], closed: :left) == [places, [0, 0, 2, 2, 4, 4, 0, 0]]
+      assert binned(breaks: [2, -2, 0]) == [places, [0, 0, 4, 4, 2, 2, 0, 0]]
+      assert binned(breaks: [-2, 0, 1], closed: :left) |> List.last() == [0, 0, 2, 2, 4, 4, 0, 0]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, group a of @spread: `bins = 4, center = 0` bins 6
+    # wide from -15, 6 in (-3, 3]; `boundary = 0` from -18, 4 and 2 either side of 0; `boundary = 1`,
+    # on which neither limit falls, from -17; `bins = 1` one bin 18 wide over -9 to 9; `binwidth =
+    # 5, center = 1` from -16.5; b under `bins = 4, boundary = 3`, both limits on the boundary, bins
+    # 4.5 wide from -15; b under `binwidth = 3, boundary = 0`, its 9 on a break, its last
+    # bin (6, 9]; six values all 2 under `bins = 4`, bins 0.1 wide, and with `boundary = 2` one bin
+    # from 2, the one break the limits reach given a second; and over `scale_x_log10()`,
+    # values 1 to 100, `breaks = c(1, 10, 100)` put through the scale, bins edged at 0, 1 and 2,
+    # and `breaks = c(-1, 10)`, one break left, no bins and nothing drawn.
+    test "places bins by bins and center or boundary, over any axis" do
+      assert binned(bins: 4, center: 0) == [
+               [-15.0, -9.00006, -9.0, -3.00006, -3.0, 2.99994, 3.0, 8.99994, 9.0, 14.99994],
+               [0, 0, 0, 0, 6, 6, 0, 0, 0, 0]
+             ]
+
+      assert binned(bins: 4, boundary: 0) |> List.last() == [0, 0, 0, 0, 4, 4, 2, 2, 0, 0, 0, 0]
+
+      assert binned(bins: 4, boundary: 1) |> hd() == [
+               -17.0,
+               -11.00006,
+               -11.0,
+               -5.00006,
+               -5.0,
+               0.99994,
+               1.0,
+               6.99994,
+               7.0,
+               12.99994,
+               13.0,
+               18.99994
+             ]
+
+      assert binned(bins: 1) == [
+               [-27.0, -9.00018, -9.0, 8.99982, 9.0, 26.99982],
+               [0, 0, 6, 6, 0, 0]
+             ]
+
+      [_a, [on_x, on_count]] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(bins: 4, boundary: 3)
+        |> Giggly.layer_data()
+        |> by_group([:x, :count])
+
+      edges = Enum.flat_map([-15, -10.5, -6, -1.5, 3, 7.5, 12], &[&1, &1 + 4.5 - 4.5e-5])
+      assert Enum.all?(Enum.zip_with(on_x, edges, &abs(&1 - &2)), &(&1 < 1.0e-9))
+      assert on_count == [0, 0, 2, 2, 1, 1, 2, 2, 1, 1, 1, 1, 0, 0]
+
+      assert binned(binwidth: 5, center: 1) |> hd() |> hd() == -16.5
+
+      [_a, [b_x, b_count]] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(binwidth: 3, boundary: 0)
+        |> Giggly.layer_data()
+        |> by_group([:x, :count])
+
+      assert {hd(b_x), b_x |> List.last() |> Float.round(5)} == {-12.0, 11.99997}
+      assert b_count == [0, 0, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+
+      [[narrow, count]] =
+        %{"v" => List.duplicate(2, 6), "g" => List.duplicate("a", 6)}
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(bins: 4)
+        |> Giggly.layer_data()
+        |> by_group([:x, :count])
+
+      assert {Enum.map(narrow, &Float.round(&1, 5)), count} ==
+               {[1.85, 1.95, 1.95, 2.05, 2.05, 2.15], [0, 0, 6, 6, 0, 0]}
+
+      [[edged, edged_count]] =
+        %{"v" => List.duplicate(2, 6), "g" => List.duplicate("a", 6)}
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(bins: 4, boundary: 2)
+        |> Giggly.layer_data()
+        |> by_group([:x, :count])
+
+      assert {Enum.map(edged, &Float.round(&1, 6)), edged_count} ==
+               {[1.9, 1.999999, 2.0, 2.099999, 2.1, 2.199999], [0, 0, 6, 6, 0, 0]}
+
+      [[logged, logged_count]] =
+        %{"v" => [1, 2, 3, 10, 20, 30, 100], "g" => List.duplicate("a", 7)}
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(breaks: [1, 10, 100])
+        |> Plot.scale_x_log10()
+        |> Giggly.layer_data()
+        |> by_group([:x, :count])
+
+      assert {Enum.map(logged, &Float.round(&1, 5)), logged_count} ==
+               {[-1.0, -1.0e-5, 0.0, 0.99999, 1.0, 1.99999, 2.0, 2.99999],
+                [0, 0, 4, 4, 3, 3, 0, 0]}
+
+      none =
+        %{"v" => [1, 2, 3, 10, 20, 30, 100], "g" => List.duplicate("a", 7)}
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(breaks: [-1, 10])
+        |> Plot.scale_x_log10()
+        |> Giggly.layer_data()
+
+      assert DataFrame.row_count(none) == 0
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, b of @spread under `breaks = c(-2, -1.5)`, none of
+    # its values counted: its counts 0, its density, shares and height NaN, so it draws nothing;
+    # under `draw_baseline = FALSE` its counts NA too.
+    test "draws no ridge for a group with nothing counted" do
+      b = fn options ->
+        [_a, [count, density, ncount, height]] =
+          @spread
+          |> Plot.new(%{x: :v, y: :g})
+          |> GigRidges.stat_binline(options)
+          |> Giggly.layer_data()
+          |> by_group([:count, :density, :ncount, :height])
+
+        Enum.map([count, density, ncount, height], &Enum.uniq/1)
+      end
+
+      assert b.(breaks: [-2, -1.5]) == [[0], [nil], [nil], [nil]]
+      assert b.(breaks: [-2, -1.5], draw_baseline: false) == [[nil], [nil], [nil], [nil]]
+    end
+
+    test "maps a height to any of its variables, and keeps none of its gathering" do
+      for variable <- [:count, :density, :ncount, :ndensity, :height, :xmin, :xmax, :width] do
+        frame =
+          @spread
+          |> Plot.new(%{x: :v, y: :g, height: {:after_stat, [variable]}})
+          |> GigRidges.stat_binline(bins: 4)
+          |> Giggly.layer_data()
+
+        assert DataFrame.pull(frame, :height) == DataFrame.pull(frame, variable)
+      end
+
+      for layered <- [&GigRidges.stat_binline(&1, bins: 4), &GigRidges.stat_density_ridges/1] do
+        names =
+          @spread
+          |> Plot.new(%{x: :v, y: :g})
+          |> layered.()
+          |> Giggly.layer_data()
+          |> DataFrame.names()
+
+        refute :xs in names or :ws in names
+      end
+    end
+
+    test "draws no rows for a layer of no values, in the columns it would have" do
+      empty = %{"v" => [nil, nil, nil], "g" => ~w(a a a)}
+
+      for {layered, computed} <- [
+            {&GigRidges.stat_binline/1,
+             [:xmin, :xmax, :width, :count, :density, :ncount, :ndensity]},
+            {&GigRidges.stat_density_ridges/1, [:density, :ndensity]}
+          ] do
+        frame = empty |> Plot.new(%{x: :v, y: :g}) |> layered.() |> Giggly.layer_data()
+        assert DataFrame.row_count(frame) == 0
+        assert Enum.all?([:x, :height | computed], &(&1 in DataFrame.names(frame)))
+      end
+    end
+
     test "refuses a center beside a boundary, and bins it cannot cut, naming itself" do
       plot = Plot.new(@spread, %{x: :v, y: :g})
 
@@ -1620,10 +1793,29 @@ defmodule GigRidgesTest do
         GigRidges.stat_binline(plot, center: 0, boundary: 1)
       end
 
-      for {option, value} <- [binwidth: -1, bins: 0, breaks: [1], closed: :middle] do
+      refusals = [
+        binwidth: -1,
+        binwidth: 0,
+        bins: 0,
+        breaks: [1],
+        breaks: [1, 1],
+        breaks: [1, :b],
+        center: :middle,
+        closed: :middle
+      ]
+
+      for {option, value} <- refusals do
         assert_raise NimbleOptions.ValidationError, ~r/:#{option}/, fn ->
           GigRidges.stat_binline(plot, [{option, value}])
         end
+      end
+
+      assert_raise ArgumentError, ~r/more than 1,000,000 bins/, fn ->
+        plot |> GigRidges.stat_binline(binwidth: 1.0e-6) |> Giggly.layer_data()
+      end
+
+      assert_raise ArgumentError, ~r/^GigRidges.stat_binline\/3 maps :x to "g"/, fn ->
+        @spread |> Plot.new(%{x: :g, y: :g}) |> GigRidges.stat_binline() |> Giggly.layer_data()
       end
     end
   end

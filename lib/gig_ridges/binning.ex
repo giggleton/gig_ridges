@@ -16,9 +16,6 @@ defmodule GigRidges.Binning do
   # Copied from Giggly's own binning (MIT), its arithmetic over finite numbers alone, as a
   # panel's limits are, so the plugin depends on none of Giggly's internal statistics.
 
-  # R's `.Machine$double.eps`.
-  @epsilon 2.220446049250313e-16
-
   @typedoc "How an axis is binned: the breaks given, a bin width or a number of bins."
   @type spec :: %{
           required(:breaks) => :none | [number()],
@@ -45,9 +42,9 @@ defmodule GigRidges.Binning do
   def breaks(%{bins: bins} = spec, %{limits: limits}),
     do: bins_breaks(limits, bins, spec.center, spec.boundary)
 
-  # The breaks moved outward a hundred-millionth of their median width: the first down and every
-  # other up when bins are closed on the right, the last up and every other down when closed on
-  # the left.
+  # The breaks, two or more, moved outward a hundred-millionth of their median width: the first
+  # down and every other up when bins are closed on the right, the last up and every other down
+  # when closed on the left.
   @doc false
   @spec fuzzy([number()], :right | :left) :: [number()]
   def fuzzy(breaks, closed) do
@@ -121,21 +118,17 @@ defmodule GigRidges.Binning do
   defp fuzz_sign(last, last, :left), do: 1
   defp fuzz_sign(_index, _last, :left), do: -1
 
+  # A hundred-millionth of the breaks' median gap; the breaks are two or more.
   defp fuzz(breaks) do
     gaps =
       breaks
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.map(fn [low, high] -> high - low end)
 
-    case median(gaps) do
-      nil -> @epsilon * 1000
-      median -> 1.0e-8 * median
-    end
+    1.0e-8 * median(gaps)
   end
 
-  # R's `median()`: the middle value, or the mean of the middle two; missing for none.
-  defp median([]), do: nil
-
+  # R's `median()`: the middle value, or the mean of the middle two.
   defp median(values) do
     sorted = Enum.sort(values)
     middle = div(length(sorted), 2)

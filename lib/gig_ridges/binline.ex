@@ -8,7 +8,8 @@ defmodule GigRidges.Binline do
   given, spanning the panel's `x`, each placed by `center:` or `boundary:`, as `stat_bin()` places
   them, closed on the right unless `closed: :left`. With `pad:`, as unless `pad: false`, an empty
   bin as wide as the first is added before them and one as wide as the last after. A value outside
-  the bins is not counted.
+  the bins is not counted, and a panel left with fewer than two breaks, as a scale's
+  transformation leaves the breaks it cannot take, has no bins and draws nothing.
 
   Its rows are each bin's two ends, at its `xmin` and a hundred-thousandth of its `width` short of
   its `xmax`: `count`, the values in it; `density`, the count over the width and the group's
@@ -16,8 +17,9 @@ defmodule GigRidges.Binline do
   density, which the density ridges' geom (`GigRidges.DensityRidgeline`) draws. Under
   `draw_baseline: false`, the empty bins before the group's first counted value and after its
   last have no `count`, `density` or `height` but the end beside the counted ones, so the ridge
-  rises from where its values begin, not along the baseline. A group's columns holding one value
-  within it are carried.
+  rises from where its values begin, not along the baseline. A group with nothing counted has no
+  density or shares, and draws no ridge, its counts missing too under `draw_baseline: false`. A
+  group's columns holding one value within it are carried.
   """
 
   use Giggly.Stat
@@ -134,20 +136,27 @@ defmodule GigRidges.Binline do
     |> DataFrame.split(:panel)
     |> Enum.sort()
     |> Enum.flat_map(fn {panel, rows} ->
-      breaks = Binning.breaks(stat, Map.fetch!(axes, panel).x)
-      fuzzy = Binning.fuzzy(breaks, stat.closed)
-
-      rows
-      |> DataFrame.pull(:xs)
-      |> Enum.with_index()
-      |> Enum.map(fn {values, index} ->
-        {edges, counts} = padded(breaks, counts(values, fuzzy, stat.closed), stat.pad)
-        steps = steps(edges, counts, stat.draw_baseline)
-        Groups.rows(rows, index, length(steps.x), carried, Keyword.new(steps))
-      end)
+      stat |> Binning.breaks(Map.fetch!(axes, panel).x) |> panel_rows(rows, carried, stat)
     end)
     |> Groups.joined(groups, carried, @computed)
   end
+
+  # A panel's groups' rows binned by `breaks`; none where fewer than two breaks are left, as given
+  # breaks a scale's transformation drops leave, where ggridges draws nothing.
+  defp panel_rows([_low, _high | _rest] = breaks, rows, carried, stat) do
+    fuzzy = Binning.fuzzy(breaks, stat.closed)
+
+    rows
+    |> DataFrame.pull(:xs)
+    |> Enum.with_index()
+    |> Enum.map(fn {values, index} ->
+      {edges, counts} = padded(breaks, counts(values, fuzzy, stat.closed), stat.pad)
+      steps = steps(edges, counts, stat.draw_baseline)
+      Groups.rows(rows, index, length(steps.x), carried, Keyword.new(steps))
+    end)
+  end
+
+  defp panel_rows(_too_few, _rows, _carried, _stat), do: []
 
   # The bins' edges and counts, with an empty bin as wide as the first before them and one as
   # wide as the last after where padded, counted after the values are, so they hold none.
@@ -178,7 +187,8 @@ defmodule GigRidges.Binline do
   defp holds?(value, low, high, :left, _index, _last), do: value >= low and value < high
 
   # Each bin written as a step's two ends: its lower edge and just short of its upper, with its
-  # edges, width, count, density over the counted values, and the shares of the group's greatest;
+  # edges, width, count, density over the counted values, and the shares of the group's greatest,
+  # missing where nothing is counted, so the group draws no ridge, as ggridges draws none;
   # without a baseline, the empty bins outside the counted ones losing their count, density and
   # height but at the end beside them.
   defp steps(edges, counts, draw_baseline) do
@@ -216,13 +226,14 @@ defmodule GigRidges.Binline do
   end
 
   # Without a baseline, the ends before the first counted bin's, but the one beside it, and after
-  # the last's, but the one beside it, missing their count, density and height.
+  # the last's, but the one beside it, missing their count, density and height; every end of a
+  # group with nothing counted.
   defp unbased(rows, true), do: rows
 
   defp unbased(rows, false) do
     case rows |> Enum.with_index() |> Enum.filter(fn {row, _index} -> row.count > 0 end) do
       [] ->
-        rows
+        Enum.map(rows, &%{&1 | count: nil, density: nil, height: nil})
 
       [{_row, first} | _rest] = counted ->
         {_row, last} = List.last(counted)
@@ -235,6 +246,9 @@ defmodule GigRidges.Binline do
 
   defp outside({row, _index}, _first, _last), do: row
 
-  defp share(_part, whole) when whole == 0, do: 0.0
-  defp share(part, whole), do: part / whole
+  # A part of a whole, missing where the whole is 0 or missing, as R's 0 / 0 is not a number.
+  defp share(part, whole) when is_number(part) and is_number(whole) and whole != 0,
+    do: part / whole
+
+  defp share(_part, _whole), do: nil
 end
