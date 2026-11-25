@@ -6,7 +6,8 @@ defmodule GigRidges do
   widths it gives, running up `y`; `stat_density_ridges/3` and
   `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge, and
   `geom_density_ridges2/3` draws it outlined round its whole border; `geom_density_line/3` draws
-  one density over a baseline of 0 the way the ridges are drawn. Each
+  one density over a baseline of 0 the way the ridges are drawn; `stat_binline/3` draws each
+  group's histogram as a ridge. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it.
@@ -124,6 +125,28 @@ defmodule GigRidges do
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
+  end
+
+  @doc """
+  Adds a layer of binned ridges: each group's values counted in bins along `x`, every group of a
+  panel in the panel's bins (`GigRidges.Binline`), drawn by the density ridges' geom as a
+  histogram's outline above its `y`, so the panel's greatest density reaches the next baseline
+  at a `scale:` of 1.
+
+  It needs `:x` and `:y`, and takes the stat's `binwidth:`, `bins:`, `center:`, `boundary:`,
+  `breaks:`, `closed:`, `pad:` and `draw_baseline:`, and the density ridges' geom's `scale:`,
+  `rel_min_height:` and `panel_scaling:`, beside Giggly's options for the marks.
+  """
+  @spec stat_binline(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def stat_binline(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def stat_binline(%Plot{} = plot, options, []) when is_list(options),
+    do: stat_binline(plot, %{}, options)
+
+  def stat_binline(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    components = {GigRidges.Binline, GigRidges.DensityRidgeline}
+    layer(plot, mapping, options, components, "GigRidges.stat_binline/3")
   end
 
   @doc """

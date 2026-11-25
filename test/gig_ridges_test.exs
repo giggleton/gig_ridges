@@ -1435,6 +1435,199 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "stat_binline/3" do
+    # Group a of @spread's binned ridges, each column's values, its places rounded.
+    defp binned(options, columns \\ [:x, :count]) do
+      [a | _b] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(options)
+        |> Giggly.layer_data()
+        |> by_group(columns)
+
+      Enum.map(a, fn values -> Enum.map(values, &((is_float(&1) && Float.round(&1, 5)) || &1)) end)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_binline(bins = 4)` over @spread: every group
+    # in the panel's bins, 6 wide over -9 to 9, edged half a width off, padded with an empty bin
+    # either side, each bin two ends, its lower edge and a hundred-thousandth of its width short of
+    # its upper; group a counting 4 in (-6, 0] and 2 in (0, 6], its density the count over the
+    # width and 6 values; drawn by the density ridges' geom, b reaching 2.77143 and 2.38571.
+    test "counts each group in the panel's bins, a step at each, padded either side" do
+      assert binned(bins: 4) == [
+               [
+                 -18.0,
+                 -12.00006,
+                 -12.0,
+                 -6.00006,
+                 -6.0,
+                 -6.0e-5,
+                 0.0,
+                 5.99994,
+                 6.0,
+                 11.99994,
+                 12.0,
+                 17.99994
+               ],
+               [0, 0, 0, 0, 4, 4, 2, 2, 0, 0, 0, 0]
+             ]
+
+      [density, ncount] = binned([bins: 4], [:density, :ncount])
+
+      assert density == [
+               0.0,
+               0.0,
+               0.0,
+               0.0,
+               0.11111,
+               0.11111,
+               0.05556,
+               0.05556,
+               0.0,
+               0.0,
+               0.0,
+               0.0
+             ]
+
+      assert ncount == [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]
+
+      [_a, [b_ymax]] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(bins: 4)
+        |> Giggly.layer_data()
+        |> by_group([:ymax])
+
+      assert Enum.map(b_ymax, &Float.round(&1, 5)) ==
+               [
+                 2.0,
+                 2.0,
+                 2.77143,
+                 2.77143,
+                 2.77143,
+                 2.77143,
+                 2.77143,
+                 2.77143,
+                 2.38571,
+                 2.38571,
+                 2.0,
+                 2.0
+               ]
+
+      assert @spread
+             |> Plot.new(%{x: :v, y: :g})
+             |> GigRidges.stat_binline()
+             |> Giggly.layer_data()
+             |> DataFrame.row_count() ==
+               2 * 64
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, group a of @spread under `bins = 4`: `pad = FALSE`
+    # drops the empty bins either side; `draw_baseline = FALSE` leaves the ends before the first
+    # counted bin's, but the one beside it, and after the last's, but the one beside it, with no
+    # count, density or height, their ncount 0.
+    test "pads either side unless pad: false, and runs no baseline under draw_baseline: false" do
+      assert binned(bins: 4, pad: false) ==
+               [
+                 [-12.0, -6.00006, -6.0, -6.0e-5, 0.0, 5.99994, 6.0, 11.99994],
+                 [0, 0, 4, 4, 2, 2, 0, 0]
+               ]
+
+      [count, height, ncount] =
+        binned([bins: 4, draw_baseline: false], [:count, :height, :ncount])
+
+      assert count == [nil, nil, nil, 0, 4, 4, 2, 2, 0, nil, nil, nil]
+      assert Enum.map(height, &is_nil/1) == Enum.map(count, &is_nil/1)
+      assert Enum.all?(ncount, &is_number/1)
+
+      assert binned(bins: 4, pad: false, draw_baseline: false) |> List.last() ==
+               [nil, 0, 4, 4, 2, 2, 0, nil]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, group a of @spread: `binwidth = 5, closed = "left"`
+    # and `binwidth = 5, center = 0` each bin from -17.5 to 17.5, 6 in [-2.5, 2.5); `boundary = 1`
+    # from -14 to 16, 6 in (-4, 1]; `breaks = c(-10, -2, 2, 10)` 6 in (-2, 2], padded by bins as
+    # wide as the first and the last, 8; and `breaks = c(-2, 0, 2)` counts a value outside none,
+    # b's 1 in (-2, 0] its density 0.5, the count over its width and the one value counted.
+    test "places bins by binwidth, center, boundary or breaks, closed either side" do
+      quarters = [-17.5, -12.50005, -12.5, -7.50005, -7.5, -2.50005, -2.5, 2.49995, 2.5, 7.49995]
+      wide = quarters ++ [7.5, 12.49995, 12.5, 17.49995]
+      six = [0, 0, 0, 0, 0, 0, 6, 6, 0, 0, 0, 0, 0, 0]
+
+      assert binned(binwidth: 5, closed: :left) == [wide, six]
+      assert binned(binwidth: 5, center: 0) == [wide, six]
+
+      assert binned(binwidth: 5, boundary: 1) == [
+               [
+                 -14.0,
+                 -9.00005,
+                 -9.0,
+                 -4.00005,
+                 -4.0,
+                 0.99995,
+                 1.0,
+                 5.99995,
+                 6.0,
+                 10.99995,
+                 11.0,
+                 15.99995
+               ],
+               [0, 0, 0, 0, 6, 6, 0, 0, 0, 0, 0, 0]
+             ]
+
+      assert binned(breaks: [-10, -2, 2, 10]) == [
+               [-18.0, -10.00008, -10.0, -2.00008, -2.0, 1.99996, 2.0, 9.99992, 10.0, 17.99992],
+               [0, 0, 0, 0, 6, 6, 0, 0, 0, 0]
+             ]
+
+      [_a, [count, density]] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(breaks: [-2, 0, 2])
+        |> Giggly.layer_data()
+        |> by_group([:count, :density])
+
+      assert {count, density} ==
+               {[0, 0, 1, 1, 0, 0, 0, 0], [0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]}
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_binline(bins = 4) + facet_wrap(~g, scales =
+    # "free_x")` over @spread: each panel binned across its own x, a's from -2 to 1.99999 and b's
+    # from -18 to 17.99994, 12 ends each; under fixed scales both from -18.
+    test "bins each panel across its own x" do
+      spans = fn scales ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_binline(bins: 4)
+        |> Plot.facet_wrap(:g, scales: scales)
+        |> Giggly.layer_data()
+        |> DataFrame.split(:panel)
+        |> Enum.sort()
+        |> Enum.map(fn {_panel, rows} ->
+          {low, high} = rows |> DataFrame.pull(:x) |> Enum.min_max()
+          {Float.round(low, 5), Float.round(high, 5), DataFrame.row_count(rows)}
+        end)
+      end
+
+      assert spans.(:free_x) == [{-2.0, 1.99999, 12}, {-18.0, 17.99994, 12}]
+      assert spans.(:fixed) == [{-18.0, 17.99994, 12}, {-18.0, 17.99994, 12}]
+    end
+
+    test "refuses a center beside a boundary, and bins it cannot cut, naming itself" do
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+
+      assert_raise ArgumentError, ~r/^GigRidges.stat_binline\/3 takes center: or boundary:/, fn ->
+        GigRidges.stat_binline(plot, center: 0, boundary: 1)
+      end
+
+      for {option, value} <- [binwidth: -1, bins: 0, breaks: [1], closed: :middle] do
+        assert_raise NimbleOptions.ValidationError, ~r/:#{option}/, fn ->
+          GigRidges.stat_binline(plot, [{option, value}])
+        end
+      end
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame

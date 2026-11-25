@@ -31,8 +31,7 @@ defmodule GigRidges.DensityRidges do
   use Giggly.Stat
 
   alias Giggly.DataFrame
-  alias Giggly.Stat.Carry
-  alias GigRidges.KernelDensity
+  alias GigRidges.{Groups, KernelDensity}
 
   defstruct bandwidth: :nrd0, from: :none, to: :none, n: 512
 
@@ -134,19 +133,7 @@ defmodule GigRidges.DensityRidges do
 
   @impl Giggly.Stat
   def compute_layer(stat, frame, _axes) do
-    finite = DataFrame.filter(frame, {:and, [{:is_finite, [:x]}, {:is_finite, [:y]}]})
-    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x])
-    weighed = if :weight in DataFrame.names(finite), do: [ws: {:list, [:weight]}], else: []
-
-    groups =
-      DataFrame.summarise(
-        finite,
-        [:panel, :group],
-        [
-          {:xs, {:list, [:x]}}
-          | weighed ++ for(name <- carried -- [:panel, :group], do: {name, {:first, [name]}})
-        ]
-      )
+    {groups, carried} = Groups.gather(frame, ws: :weight)
 
     groups
     |> DataFrame.split(:panel)
@@ -155,14 +142,14 @@ defmodule GigRidges.DensityRidges do
     |> Enum.map(fn {rows, index, places, densities} ->
       peak = Enum.max(densities)
 
-      group_frame(rows, List.duplicate(index, length(places)), carried,
+      Groups.rows(rows, index, length(places), carried,
         x: places,
         density: densities,
         ndensity: Enum.map(densities, fn density -> share(density, peak) end),
         height: densities
       )
     end)
-    |> joined(groups, carried)
+    |> Groups.joined(groups, carried, [:x, :density, :ndensity, :height])
   end
 
   # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
@@ -222,24 +209,6 @@ defmodule GigRidges.DensityRidges do
   # The end of the places given, else the one three bandwidths beyond the panel's values.
   defp place_or(:none, beyond), do: beyond
   defp place_or(given, _beyond), do: given
-
-  # A group's rows: its carried columns repeated once per place, beside the columns computed.
-  defp group_frame(rows, indices, carried, computed) do
-    rows
-    |> DataFrame.slice(indices)
-    |> DataFrame.select(Enum.map(carried, fn name -> {name, name} end))
-    |> then(fn frame ->
-      Enum.reduce(computed, frame, fn {name, values}, built ->
-        DataFrame.put(built, name, values)
-      end)
-    end)
-  end
-
-  # The groups' rows end to end; a layer of no groups has none, in the columns it would have.
-  defp joined([], groups, carried),
-    do: group_frame(groups, [], carried, x: [], density: [], ndensity: [], height: [])
-
-  defp joined(frames, _groups, _carried), do: DataFrame.concat_rows(frames)
 
   defp share(density, peak) when peak > 0, do: density / peak
   defp share(_density, _peak), do: 0.0
