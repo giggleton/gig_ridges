@@ -603,6 +603,111 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges(stat = "identity")` over heights
+    # given on baselines 0, 1 and 3, greatest 0.4, 0.2 and 0.8: the tallest reaches 1.35, 0.675 and
+    # 2.7, at 1.8 times the heights over the greatest, 0.8, times the baselines' spacing, their
+    # span over one fewer than how many, 1.5; at `scale = 1`, 0.75, 0.375 and 1.5; faceted, 0 and 1
+    # in one panel and 3 in another, each panel's greatest 1.5, the spacing still the layer's,
+    # 1.5, 0.75 and 1.5, and under `panel_scaling = FALSE` the layer's, 0.75, 0.375 and 1.5; one
+    # ridge, at 3, its heights as they are, 0.4; heights all 0 no point; and a missing height,
+    # baselines 0 and 2, reaches 2 and 1, the greatest the rest's.
+    test "scales whatever height it is given so the tallest reaches the next baseline" do
+      given = %{
+        "x" => Enum.flat_map(1..3, fn _ridge -> [1, 2, 3, 4, 5] end),
+        "y" => Enum.flat_map([0, 1, 3], &List.duplicate(&1, 5)),
+        "d" => [0.1, 0.3, 0.4, 0.3, 0.1, 0.05, 0.1, 0.2, 0.1, 0.05, 0.1, 0.2, 0.8, 0.2, 0.1],
+        "f" => Enum.flat_map(~w(p p q), &List.duplicate(&1, 5))
+      }
+
+      reaches = fn data, options, faceted? ->
+        data
+        |> Plot.new(%{x: :x, y: :y, height: :d, group: :y})
+        |> Plot.layer(%{}, [stat: :identity, geom: GigRidges.DensityRidgeline] ++ options)
+        |> then(fn plot -> if faceted?, do: Plot.facet_wrap(plot, :f), else: plot end)
+        |> Giggly.layer_data()
+        |> by_group([:ymin, :ymax])
+        |> Enum.map(fn [lows, highs] ->
+          highs
+          |> Enum.zip_with(lows, fn
+            nil, _low -> nil
+            high, low -> Float.round(high - low, 9)
+          end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.max(fn -> nil end)
+        end)
+      end
+
+      assert reaches.(given, [], false) == [1.35, 0.675, 2.7]
+      assert reaches.(given, [scale: 1], false) == [0.75, 0.375, 1.5]
+      assert reaches.(given, [scale: 1], true) == [1.5, 0.75, 1.5]
+      assert reaches.(given, [scale: 1, panel_scaling: false], true) == [0.75, 0.375, 1.5]
+
+      one = %{
+        "x" => [1, 2, 3, 4, 5],
+        "y" => List.duplicate(3, 5),
+        "d" => [0.05, 0.1, 0.4, 0.1, 0.05]
+      }
+
+      assert reaches.(one, [scale: 1], false) == [0.4]
+
+      flat = %{"x" => [1, 2, 3, 1, 2, 3], "y" => [0, 0, 0, 1, 1, 1], "d" => List.duplicate(0, 6)}
+      assert reaches.(flat, [], false) == [nil, nil]
+
+      missing = %{
+        "x" => [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+        "y" => [0, 0, 0, 0, 0, 2, 2, 2, 2, 2],
+        "d" => [0.1, 0.3, 0.4, 0.3, nil, 0.05, 0.1, 0.2, 0.1, 0.05]
+      }
+
+      assert reaches.(missing, [scale: 1], false) == [2.0, 1.0]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b of @spread on baselines 0 and 3,
+    # `bandwidth = 1`: `layer_data()` keeps `height` the density, greatest 0.3307764, beside
+    # `iscale`, 9.06957, the tallest reaching 5.4; `aes(height = after_stat(ndensity))` reaches 5.4
+    # on each ridge; and the stat drawn by the plain ridgeline, unscaled, 0.3307764.
+    test "keeps the density its height and writes the scale it draws it at, iscale" do
+      data = Map.put(@spread, "y", List.duplicate(0, 6) ++ List.duplicate(3, 7))
+
+      tallest = fn frame ->
+        frame
+        |> by_group([:ymin, :ymax])
+        |> Enum.map(fn [lows, highs] ->
+          highs |> Enum.zip_with(lows, &(&1 - &2)) |> Enum.max() |> Float.round(6)
+        end)
+      end
+
+      frame =
+        data
+        |> Plot.new(%{x: :v, y: :y, group: :y})
+        |> GigRidges.geom_density_ridges(bandwidth: 1)
+        |> Giggly.layer_data()
+
+      assert frame |> DataFrame.pull(:height) |> Enum.max() |> Float.round(7) == 0.3307764
+
+      assert frame |> DataFrame.pull(:iscale) |> Enum.uniq() |> Enum.map(&Float.round(&1, 5)) == [
+               9.06957
+             ]
+
+      assert tallest.(frame) |> Enum.max() == 5.4
+
+      by_share =
+        data
+        |> Plot.new(%{x: :v, y: :y, group: :y, height: {:after_stat, [:ndensity]}})
+        |> GigRidges.geom_density_ridges(bandwidth: 1)
+        |> Giggly.layer_data()
+
+      assert tallest.(by_share) == [5.4, 5.4]
+
+      unscaled =
+        data
+        |> Plot.new(%{x: :v, y: :y, group: :y})
+        |> Plot.layer(%{}, stat: GigRidges.DensityRidges, geom: GigRidges.Ridgeline, bandwidth: 1)
+        |> Giggly.layer_data()
+
+      assert tallest.(unscaled) |> Enum.max() |> Float.round(6) == 0.330776
+    end
+
     test "refuses a from not below its to, and n below 2 or not whole, naming the function" do
       plot = Plot.new(@spread, %{x: :v, y: :g})
 

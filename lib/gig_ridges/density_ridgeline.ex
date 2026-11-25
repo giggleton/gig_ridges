@@ -1,24 +1,36 @@
 defmodule GigRidges.DensityRidgeline do
   @moduledoc """
-  The density ridges' geom: the ridgeline (`GigRidges.Ridgeline`), but each point 1.8 times its
-  `height` above its baseline where neither the `scale:` option nor a mapped `scale` gives
-  another, so neighbouring ridges overlap, and cut off by `rel_min_height` in place of
-  `min_height`.
+  The density ridges' geom: the ridgeline (`GigRidges.Ridgeline`), but each point's `height`
+  scaled so the tallest ridge reaches the next baseline, then 1.8 times that above its baseline
+  where neither the `scale:` option nor a mapped `scale` gives another, so neighbouring ridges
+  overlap, and cut off by `rel_min_height` in place of `min_height`.
 
   A point whose height is below `rel_min_height` times the layer's greatest height, across every
   panel, is left out of its ridge, which breaks there. Like `scale`, `rel_min_height` is an option
   and an aesthetic: given as an option, a share from 0 to 1, its value is every point's; else a
   mapped column gives each point its own, a point whose value is missing never cut off; else 0,
   and no point is left out.
+
+  It scales each point's `height` by its `iscale`, which it writes: the spacing between the
+  layer's baselines, their span over one fewer than how many there are, over the greatest height
+  of the point's panel, or of the layer under `panel_scaling: false`, so the tallest ridge reaches
+  the next baseline at a `scale` of 1, whatever height is mapped. Over one baseline, `iscale` is
+  1, and the heights are drawn as they are; where the greatest height is 0, a point has no
+  `iscale`, and is left out. The cut-off is taken on the heights scaled.
   """
 
   use Giggly.Geom
 
+  alias Giggly.DataFrame
   alias GigRidges.Ridgeline
 
-  defstruct scale: :none, rel_min_height: :none
+  defstruct scale: :none, rel_min_height: :none, panel_scaling: true
 
-  @type t :: %__MODULE__{scale: :none | float(), rel_min_height: :none | float()}
+  @type t :: %__MODULE__{
+          scale: :none | float(),
+          rel_min_height: :none | float(),
+          panel_scaling: boolean()
+        }
 
   @unmapped_scale 1.8
 
@@ -39,6 +51,14 @@ defmodule GigRidges.DensityRidgeline do
           "The height below which a point is left out of its ridge, as a share of the layer's " <>
             "greatest height, from 0 to 1, every point's, over a mapped `rel_min_height`; 0 " <>
             "where neither gives one."
+      ],
+      panel_scaling: [
+        type: :boolean,
+        default: true,
+        doc:
+          "Whether each panel's ridges are scaled so its greatest height reaches the next " <>
+            "baseline (`true`), or the layer's ridges together, so a panel of lower heights " <>
+            "draws lower ridges (`false`)."
       ]
     ]
   end
@@ -56,8 +76,10 @@ defmodule GigRidges.DensityRidgeline do
     do: Ridgeline.default_aesthetics(ridgeline(geom), element)
 
   @impl Giggly.Geom
-  def setup_data(geom, frame, axis_types),
-    do: Ridgeline.setup_data(ridgeline(geom), frame, axis_types)
+  def setup_data(geom, frame, axis_types) do
+    scaled = DataFrame.put(frame, :iscale, iscales(geom, frame))
+    Ridgeline.setup_data(ridgeline(geom), scaled, axis_types)
+  end
 
   @impl Giggly.Geom
   def draw_panel(geom, frame, context), do: Ridgeline.draw_panel(ridgeline(geom), frame, context)
@@ -75,13 +97,64 @@ defmodule GigRidges.DensityRidgeline do
 
   def validate_share(other), do: {:error, "expected a number from 0 to 1, got: #{inspect(other)}"}
 
+  # Each point's `iscale`: the spacing between the layer's baselines over the greatest height of
+  # its panel, or of the layer under `panel_scaling: false`; 1 over one baseline; none where the
+  # greatest height is 0.
+  defp iscales(geom, frame) do
+    heights = DataFrame.pull(frame, :height)
+
+    keys =
+      if geom.panel_scaling,
+        do: DataFrame.pull(frame, :panel),
+        else: List.duplicate(:layer, length(heights))
+
+    case spacing(DataFrame.pull(frame, :y)) do
+      :one -> List.duplicate(1.0, length(heights))
+      spacing -> scaled_by(keys, greatest_by(keys, heights), spacing)
+    end
+  end
+
+  # Each point's `iscale` from the greatest height under its key.
+  defp scaled_by(keys, greatest, spacing),
+    do: Enum.map(keys, fn key -> iscale(spacing, Map.fetch!(greatest, key)) end)
+
+  # The greatest height under each key, a panel or the whole layer.
+  defp greatest_by(keys, heights) do
+    keys
+    |> Enum.zip(heights)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {key, values} -> {key, greatest(values)} end)
+  end
+
+  defp iscale(_spacing, greatest) when greatest == 0, do: nil
+  defp iscale(spacing, greatest), do: spacing / greatest
+
+  # The greatest of `heights` that is a number, 0 where none is.
+  defp greatest(heights) do
+    heights
+    |> Enum.filter(&is_number/1)
+    |> Enum.max(fn -> 0.0 end)
+  end
+
+  # The spacing between the layer's distinct baselines, their span over one fewer than how many
+  # there are; `:one` where there is one or none.
+  defp spacing(baselines) do
+    distinct = baselines |> Enum.filter(&is_number/1) |> Enum.uniq()
+
+    case length(distinct) do
+      count when count < 2 -> :one
+      count -> (Enum.max(distinct) - Enum.min(distinct)) / (count - 1)
+    end
+  end
+
   # The ridgeline this geom draws through: its options this one's, cut off by `rel_min_height`,
-  # and its unmapped scale 1.8.
+  # its heights scaled by `iscale`, and its unmapped scale 1.8.
   defp ridgeline(%__MODULE__{} = geom) do
     fields =
       geom
       |> Map.from_struct()
-      |> Map.merge(%{cut_off: :rel_min_height, unmapped_scale: @unmapped_scale})
+      |> Map.delete(:panel_scaling)
+      |> Map.merge(%{cut_off: :rel_min_height, unmapped_scale: @unmapped_scale, iscaled: true})
 
     struct!(Ridgeline, fields)
   end

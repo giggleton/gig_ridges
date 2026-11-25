@@ -27,19 +27,23 @@ defmodule GigRidges.Ridgeline do
   # `:min_height` here and `:rel_min_height` there, a share of the layer's greatest height, given
   # or mapped there; and the scale a point takes where neither the option nor a mapping gives one,
   # 1 here and 1.8 there. The cut-off it is not cut by is ignored, mapped or not, as ggridges'
-  # ridgeline ignores `rel_min_height` and its density ridges `min_height`.
+  # ridgeline ignores `rel_min_height` and its density ridges `min_height`. `iscaled` is whether
+  # each point's height is first multiplied by its `iscale` column, which the density ridges' geom
+  # writes, so the tallest reaches the next baseline.
   defstruct scale: :none,
             min_height: :none,
             rel_min_height: :none,
             cut_off: :min_height,
-            unmapped_scale: 1.0
+            unmapped_scale: 1.0,
+            iscaled: false
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           min_height: :none | float(),
           rel_min_height: :none | float(),
           cut_off: :min_height | :rel_min_height,
-          unmapped_scale: float()
+          unmapped_scale: float(),
+          iscaled: boolean()
         }
 
   @impl Giggly.Geom
@@ -117,7 +121,7 @@ defmodule GigRidges.Ridgeline do
 
   @impl Giggly.Geom
   def setup_data(ridgeline, frame, axis_types) do
-    heights = DataFrame.pull(frame, :height)
+    heights = heights(ridgeline, frame)
     greatest = greatest(heights)
 
     {lows, highs} =
@@ -158,6 +162,19 @@ defmodule GigRidges.Ridgeline do
   def draw_key(_ridgeline, key, context), do: Geom.draw_key(ribbon(), key, context)
   @impl Giggly.Geom
   def key_size(_ridgeline, key, context), do: Geom.key_size(ribbon(), key, context)
+
+  # Each point's height, times its `iscale` under the density ridges' geom; missing where either
+  # is.
+  defp heights(%__MODULE__{iscaled: false}, frame), do: DataFrame.pull(frame, :height)
+
+  defp heights(%__MODULE__{iscaled: true}, frame) do
+    frame
+    |> DataFrame.pull(:height)
+    |> Enum.zip_with(DataFrame.pull(frame, :iscale), fn
+      height, iscale when is_number(height) and is_number(iscale) -> height * iscale
+      _height, _iscale -> nil
+    end)
+  end
 
   # The layer's greatest height, 0 where it has none.
   defp greatest(heights) do

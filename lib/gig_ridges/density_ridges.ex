@@ -22,9 +22,9 @@ defmodule GigRidges.DensityRidges do
   totalling 0, R's `density()` fails, and the panel has no density, as ggridges draws none of it.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
-  the group's greatest, and `height`, the density scaled so the panel's greatest reaches the
-  spacing between baselines, or the layer's greatest under `panel_scaling: false`, which the
-  ridgeline draws above each baseline. A group's columns holding one value within it are carried,
+  the group's greatest, and `height`, the density, which the density ridges' geom
+  (`GigRidges.DensityRidgeline`) scales to the spacing between baselines as it draws, and the
+  plain ridgeline draws as it is. A group's columns holding one value within it are carried,
   a `weight` among them where every group's is one value, as ggridges keeps it.
   """
 
@@ -34,11 +34,10 @@ defmodule GigRidges.DensityRidges do
   alias Giggly.Stat.Carry
   alias GigRidges.KernelDensity
 
-  defstruct bandwidth: :nrd0, panel_scaling: true, from: :none, to: :none, n: 512
+  defstruct bandwidth: :nrd0, from: :none, to: :none, n: 512
 
   @type t :: %__MODULE__{
           bandwidth: :nrd0 | float(),
-          panel_scaling: boolean(),
           from: :none | float(),
           to: :none | float(),
           n: pos_integer()
@@ -53,14 +52,6 @@ defmodule GigRidges.DensityRidges do
         doc:
           "The bandwidth every group's density is estimated with, a number above 0, or `:nrd0`, " <>
             "the mean of Silverman's rule over each of the panel's groups."
-      ],
-      panel_scaling: [
-        type: :boolean,
-        default: true,
-        doc:
-          "Whether each panel's ridges are scaled so its greatest density reaches the next " <>
-            "baseline (`true`), or the layer's ridges together, so a panel of lower densities " <>
-            "draws lower ridges (`false`)."
       ],
       from: [
         type: {:custom, __MODULE__, :validate_end, []},
@@ -157,38 +148,21 @@ defmodule GigRidges.DensityRidges do
         ]
       )
 
-    panels =
-      groups
-      |> DataFrame.split(:panel)
-      |> Enum.sort()
-      |> Enum.map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
+    groups
+    |> DataFrame.split(:panel)
+    |> Enum.sort()
+    |> Enum.flat_map(fn {_panel, rows} -> panel_estimates(stat, rows) end)
+    |> Enum.map(fn {rows, index, places, densities} ->
+      peak = Enum.max(densities)
 
-    spacing = spacing(DataFrame.pull(groups, :y))
-    layer_greatest = panels |> Enum.concat() |> greatest()
-
-    panels
-    |> Enum.flat_map(fn estimates ->
-      greatest = if stat.panel_scaling, do: greatest(estimates), else: layer_greatest
-
-      Enum.map(estimates, fn {rows, index, places, densities} ->
-        peak = Enum.max(densities)
-
-        group_frame(rows, List.duplicate(index, length(places)), carried,
-          x: places,
-          density: densities,
-          ndensity: Enum.map(densities, fn density -> share(density, peak) end),
-          height: Enum.map(densities, fn density -> scaled(density, greatest, spacing) end)
-        )
-      end)
+      group_frame(rows, List.duplicate(index, length(places)), carried,
+        x: places,
+        density: densities,
+        ndensity: Enum.map(densities, fn density -> share(density, peak) end),
+        height: densities
+      )
     end)
     |> joined(groups, carried)
-  end
-
-  # The greatest density among `estimates`, 0 where there are none.
-  defp greatest(estimates) do
-    estimates
-    |> Enum.flat_map(fn {_rows, _index, _places, densities} -> densities end)
-    |> Enum.max(fn -> 0.0 end)
   end
 
   # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
@@ -308,18 +282,4 @@ defmodule GigRidges.DensityRidges do
     high = ceil(position)
     Enum.at(sorted, low) + (Enum.at(sorted, high) - Enum.at(sorted, low)) * (position - low)
   end
-
-  # The least gap between the layer's distinct baselines, 1 where there is one.
-  defp spacing(baselines) do
-    baselines
-    |> Enum.filter(&is_number/1)
-    |> Enum.uniq()
-    |> Enum.sort()
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.map(fn [lower, upper] -> upper - lower end)
-    |> Enum.min(fn -> 1.0 end)
-  end
-
-  defp scaled(_density, greatest, _spacing) when greatest == 0, do: 0.0
-  defp scaled(density, greatest, spacing), do: density / greatest * spacing
 end
