@@ -2165,6 +2165,55 @@ defmodule GigRidgesTest do
     # to = 1, n = 3`), its median on the place 0, the bands 1, 2 and 4, a place on a quantile in
     # the band below it, its lines' densities 0.2955113, 0.3309750 and 0.2955113; and under
     # `quantiles = c(0, 1)` there, lines on the first place and the last, their densities the
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, calc_ecdf = TRUE)` over @spread: 1024 rows, every `datatype` "ridgeline", each
+    # place's `ecdf` and `quantile` band as under quantile lines, a's 256th ecdf 0.4844645, its
+    # bands at the 1st, 170th, 250th, 260th, 340th and 512th places 1, 1, 2, 3, 4, 4, of levels 1
+    # to 4; `quantiles = c(0.1, 0.9)` bands 1, 1, 2, 2, 3, 3, of levels 1 to 3; `quantile_fun =
+    # mean` 1, 1, 1, 2, 2, 2; and the ridges drawn as without it, no line among them.
+    test "writes each place's ecdf and band under calc_ecdf, drawing no lines" do
+      ecdf = fn options ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges([bandwidth: 1, calc_ecdf: true] ++ options)
+      end
+
+      bands = fn frame ->
+        quantiles = DataFrame.pull(frame, :quantile)
+        Enum.map([0, 169, 249, 259, 339, 511], &Enum.at(quantiles, &1))
+      end
+
+      frame = [] |> ecdf.() |> Giggly.layer_data()
+      assert DataFrame.row_count(frame) == 1024
+      assert Enum.uniq(DataFrame.pull(frame, :datatype)) == ["ridgeline"]
+      assert near?([frame |> DataFrame.pull(:ecdf) |> Enum.at(255)], [0.4844645])
+      assert bands.(frame) == [1, 1, 2, 3, 4, 4]
+
+      assert DataFrame.category(frame, :quantile) ==
+               {:category, levels: [1, 2, 3, 4], ordered: false}
+
+      tenths = [quantiles: [0.1, 0.9]] |> ecdf.() |> Giggly.layer_data()
+      assert bands.(tenths) == [1, 1, 2, 2, 3, 3]
+
+      assert DataFrame.category(tenths, :quantile) ==
+               {:category, levels: [1, 2, 3], ordered: false}
+
+      mean = fn values, _probabilities -> Enum.sum(values) / length(values) end
+
+      assert [quantile_fun: mean] |> ecdf.() |> Giggly.layer_data() |> bands.() == [
+               1,
+               1,
+               1,
+               2,
+               2,
+               2
+             ]
+
+      svg = fn plot -> plot |> Plot.theme_void() |> Giggly.to_svg() |> IO.iodata_to_binary() end
+      plain = @spread |> Plot.new(%{x: :v, y: :g}) |> GigRidges.geom_density_ridges(bandwidth: 1)
+      assert svg.(ecdf.([])) == svg.(plain)
+    end
+
     # places', 0.2364050, their ecdf 0 and 0.5673800, the bands 1, 2 and 2.
     test "places lines at 0 and 1, and bands a place on a quantile below it" do
       a = fn options ->

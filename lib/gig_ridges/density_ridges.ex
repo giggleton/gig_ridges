@@ -21,14 +21,14 @@ defmodule GigRidges.DensityRidges do
   the values unweighted. Where a group estimated has a weight missing or below 0, or weights
   totalling 0, R's `density()` fails, and the panel has no density, as ggridges draws none of it.
 
-  Under `quantile_lines:`, each group has a row for each of its quantiles, `quantile_fun:` of its
-  values at the probabilities `quantiles:` gives, a count of equal parts, 4 unless given, or the
-  probabilities themselves; R's type 7 quantiles where no function is given. Each line's row is at
-  its place, its `density` and `ecdf` read from the ridge's by linear interpolation, its `quantile`
-  its number and its `datatype` `"vline"`, which every ridgeline geom draws as a line up the ridge.
-  Each place of the ridge has then its `ecdf`, the density's left sum to it times the step between
-  places, unnormalised, as ggridges sums it, and its `quantile`, the band between the lines it
-  falls in, a category, as ggridges' is a factor.
+  Under `calc_ecdf:` or `quantile_lines:`, each place of a ridge has its `ecdf`, the density's left
+  sum to it times the step between places, unnormalised, as ggridges sums it, and its `quantile`,
+  the band between its group's quantiles it falls in, a category, as ggridges' is a factor, the
+  quantiles `quantile_fun:` of its values at the probabilities `quantiles:` gives, a count of equal
+  parts, 4 unless given, or the probabilities themselves; R's type 7 quantiles where no function
+  is given. Under `quantile_lines:`, each group has a row for each of its quantiles too, at its
+  place, its `density` and `ecdf` read from the ridge's by linear interpolation, its `quantile` its
+  number and its `datatype` `"vline"`, which every ridgeline geom draws as a line up the ridge.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density, which the density ridges' geom
@@ -48,6 +48,7 @@ defmodule GigRidges.DensityRidges do
             to: :none,
             n: 512,
             quantile_lines: false,
+            calc_ecdf: false,
             quantiles: 4,
             quantile_fun: &__MODULE__.type7_quantiles/2
 
@@ -57,6 +58,7 @@ defmodule GigRidges.DensityRidges do
           to: :none | float(),
           n: pos_integer(),
           quantile_lines: boolean(),
+          calc_ecdf: boolean(),
           quantiles: pos_integer() | [float()],
           quantile_fun: (list(), [float()] -> number() | [number()])
         }
@@ -98,6 +100,13 @@ defmodule GigRidges.DensityRidges do
         doc:
           "Whether a line is drawn up each ridge at each of its group's quantiles, from its " <>
             "baseline to the ridge, each a row of the layer whose `datatype` is `\"vline\"`."
+      ],
+      calc_ecdf: [
+        type: :boolean,
+        default: false,
+        doc:
+          "Whether each place has its `ecdf` and `quantile`, the band between its group's " <>
+            "quantiles it falls in, without the lines `quantile_lines:` draws."
       ],
       quantiles: [
         type: {:custom, __MODULE__, :validate_quantiles, []},
@@ -223,39 +232,47 @@ defmodule GigRidges.DensityRidges do
     |> banded(stat)
   end
 
-  defp computed_columns(%__MODULE__{quantile_lines: false}),
+  defp computed_columns(%__MODULE__{quantile_lines: false, calc_ecdf: false}),
     do: [:x, :density, :ndensity, :height, :datatype]
 
-  defp computed_columns(%__MODULE__{quantile_lines: true}),
+  defp computed_columns(_stat),
     do: [:x, :density, :ndensity, :height, :datatype, :ecdf, :quantile]
 
-  # A group's rows: its ridge's alone, or under `quantile_lines:` its ridge's with each place's
-  # `ecdf`, the density's left sum to it times the step between places, and its `quantile`, the band
-  # between the quantiles it falls in, and a row for each quantile, at its place, its density and
-  # `ecdf` read from the ridge's by linear interpolation, its `quantile` its order and its
-  # `datatype` `"vline"`, as ggridges writes them.
-  defp quantiled(%__MODULE__{quantile_lines: false}, ridge, _values, _peak), do: [ridge]
+  # A group's rows: its ridge's alone; or under `calc_ecdf:` or `quantile_lines:` its ridge's with
+  # each place's `ecdf`, the density's left sum to it times the step between places, and its
+  # `quantile`, the band between the quantiles it falls in; and under `quantile_lines:` a row for
+  # each quantile, at its place, its density and `ecdf` read from the ridge's by linear
+  # interpolation, its `quantile` its order and its `datatype` `"vline"`, as ggridges writes them.
+  defp quantiled(%__MODULE__{quantile_lines: false, calc_ecdf: false}, ridge, _values, _peak),
+    do: [ridge]
 
   defp quantiled(stat, ridge, values, peak) do
     places = ridge[:x]
     densities = ridge[:density]
     ecdf = ecdf(places, densities)
-    lines = stat.quantile_fun.(values, probabilities(stat.quantiles)) |> List.wrap()
-    edges = Enum.sort(lines)
+    positions = stat.quantile_fun.(values, probabilities(stat.quantiles)) |> List.wrap()
+    edges = Enum.sort(positions)
     bands = Enum.map(places, fn place -> 1 + Enum.count(edges, &(&1 < place)) end)
-    line_densities = Enum.map(lines, &interpolated(places, densities, &1))
+
+    ridged = ridge ++ [ecdf: ecdf, quantile: bands]
+
+    if stat.quantile_lines,
+      do: [ridged, line_rows(positions, places, densities, ecdf, peak)],
+      else: [ridged]
+  end
+
+  # The rows of a group's quantile lines, one at each of its quantiles' positions.
+  defp line_rows(positions, places, densities, ecdf, peak) do
+    line_densities = Enum.map(positions, &interpolated(places, densities, &1))
 
     [
-      ridge ++ [ecdf: ecdf, quantile: bands],
-      [
-        x: Enum.map(lines, &(&1 / 1)),
-        density: line_densities,
-        ndensity: Enum.map(line_densities, &(&1 && share(&1, peak))),
-        height: line_densities,
-        datatype: List.duplicate("vline", length(lines)),
-        ecdf: Enum.map(lines, &interpolated(places, ecdf, &1)),
-        quantile: Enum.to_list(1..length(lines)//1)
-      ]
+      x: Enum.map(positions, &(&1 / 1)),
+      density: line_densities,
+      ndensity: Enum.map(line_densities, &(&1 && share(&1, peak))),
+      height: line_densities,
+      datatype: List.duplicate("vline", length(positions)),
+      ecdf: Enum.map(positions, &interpolated(places, ecdf, &1)),
+      quantile: Enum.to_list(1..length(positions)//1)
     ]
   end
 
@@ -288,9 +305,9 @@ defmodule GigRidges.DensityRidges do
   defp along([{low, low_value}, {high, high_value}], place),
     do: low_value + (high_value - low_value) * (place - low) / (high - low)
 
-  # The layer's `quantile` column a category under `quantile_lines:`, as ggridges' is a factor,
-  # its levels every band's and line's number.
-  defp banded(frame, %__MODULE__{quantile_lines: false}), do: frame
+  # The layer's `quantile` column a category under `calc_ecdf:` or `quantile_lines:`, as ggridges'
+  # is a factor, its levels every band's and line's number.
+  defp banded(frame, %__MODULE__{quantile_lines: false, calc_ecdf: false}), do: frame
 
   defp banded(frame, _stat) do
     bands = DataFrame.pull(frame, :quantile)
