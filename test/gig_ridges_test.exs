@@ -687,6 +687,18 @@ defmodule GigRidgesTest do
     # `bandwidth = 1`: `layer_data()` keeps `height` the density, greatest 0.3307764, beside
     # `iscale`, 9.06957, the tallest reaching 5.4; `aes(height = after_stat(ndensity))` reaches 5.4
     # on each ridge; and the stat drawn by the plain ridgeline, unscaled, 0.3307764.
+    test "maps a height to any of its variables" do
+      for variable <- [:x, :density, :ndensity, :height] do
+        frame =
+          @spread
+          |> Plot.new(%{x: :v, y: :g, height: {:after_stat, [variable]}})
+          |> GigRidges.geom_density_ridges(bandwidth: 1)
+          |> Giggly.layer_data()
+
+        assert DataFrame.pull(frame, :height) == DataFrame.pull(frame, variable)
+      end
+    end
+
     test "keeps the density its height and writes the scale it draws it at, iscale" do
       data = Map.put(@spread, "y", List.duplicate(0, 6) ++ List.duplicate(3, 7))
 
@@ -1898,6 +1910,124 @@ defmodule GigRidgesTest do
       pieces = plot |> drawn() |> Enum.filter(&(elem(&1, 0) == "polygon"))
       assert length(pieces) == 2 * 295
       assert Enum.all?(pieces, fn {_tag, _points, style} -> style =~ "stroke-width: 0.38" end)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: a gradient ridge's top line is the plain
+    # ridgeline's; `gradient_lwd = 0` outlines its pieces 0 wide; and each gradient geom's legend
+    # keys, a fill of a and b, its ridges' keys, room as wide as their line, 17.345 TeX points at
+    # 0.5 and 28.453 at 10, 17.28 and 28.35 in Giggly's, a black-outlined square of each fill.
+    test "draws the plain ridgeline's top over its pieces, and keys as the ridges" do
+      ridges = %{
+        "x" => [1, 2, 3, 4, 1, 2, 3, 4],
+        "y" => [0, 0, 0, 0, 1, 1, 1, 1],
+        "h" => [0.2, 0.9, 0.3, 0.5, 0.5, 0.4, 0.1, 0.3],
+        "f" => ~w(a a b b a a b b)
+      }
+
+      tops = fn plot ->
+        plot
+        |> Plot.theme_void()
+        |> Plot.theme(legend_position: :none)
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<polyline points='([^']*)'/, &1))
+      end
+
+      plot = Plot.new(ridges, %{x: :x, y: :y, height: :h, group: :y})
+      gradient = plot |> Plot.aes(%{fill: :x}) |> GigRidges.geom_ridgeline_gradient()
+      assert tops.(gradient) == tops.(GigRidges.geom_ridgeline(plot))
+
+      unoutlined =
+        plot |> Plot.aes(%{fill: :x}) |> GigRidges.geom_ridgeline_gradient(gradient_lwd: 0)
+
+      assert unoutlined |> drawn() |> hd() |> elem(2) =~ "stroke-width: 0.00"
+
+      keyed = [
+        fn width ->
+          plot |> Plot.aes(%{fill: :f}) |> GigRidges.geom_ridgeline_gradient(linewidth: width)
+        end,
+        fn width ->
+          @spread
+          |> Plot.new(%{x: :v, y: :g, fill: :g})
+          |> GigRidges.geom_density_ridges_gradient(bandwidth: 1, linewidth: width)
+        end
+      ]
+
+      for layer <- keyed do
+        sides =
+          for width <- [0.5, 10] do
+            width
+            |> layer.()
+            |> Giggly.to_svg()
+            |> IO.iodata_to_binary()
+            |> then(
+              &Regex.scan(
+                ~r/width='([0-9.]+)' height='([0-9.]+)' style='[^']*fill: #EBEBEB;'/,
+                &1
+              )
+            )
+            |> Enum.flat_map(fn
+              [_key, side, side] -> [side]
+              [_panel, _width, _height] -> []
+            end)
+            |> Enum.uniq()
+          end
+
+        assert sides == [["17.28"], ["28.35"]]
+        glyphs = 0.5 |> layer.() |> Giggly.to_svg() |> IO.iodata_to_binary()
+
+        assert length(
+                 Regex.scan(~r/<rect [^>]*stroke: #000000[^>]*fill: #(F8766D|00BFC4)/, glyphs)
+               ) == 2
+      end
+    end
+
+    test "take their mapping in their own call, or none and no options" do
+      ridges = Plot.new(@ridges, %{})
+      own = GigRidges.geom_ridgeline_gradient(ridges, %{x: :x, y: :y, height: :h, group: :y})
+      assert DataFrame.pull(Giggly.layer_data(own), :ymax) == [0.2, 0.9, 0.3, 1.5, 1.4, 1.1]
+
+      plain =
+        ridges
+        |> Plot.aes(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline_gradient()
+
+      assert DataFrame.row_count(Giggly.layer_data(plain)) == 6
+
+      density = Plot.new(@spread, %{})
+      own = GigRidges.geom_density_ridges_gradient(density, %{x: :v, y: :g})
+      assert DataFrame.row_count(Giggly.layer_data(own)) == 1024
+
+      plain = density |> Plot.aes(%{x: :v, y: :g}) |> GigRidges.geom_density_ridges_gradient()
+      assert DataFrame.row_count(Giggly.layer_data(plain)) == 1024
+    end
+
+    test "refuse what their ridgelines refuse, naming themselves" do
+      assert_raise ArgumentError, ~r/^GigRidges.geom_ridgeline_gradient\/3.*height/, fn ->
+        @ridges
+        |> Plot.new(%{x: :x, y: :y})
+        |> GigRidges.geom_ridgeline_gradient()
+        |> Giggly.layer_data()
+      end
+
+      assert_raise ArgumentError,
+                   ~r/^GigRidges.geom_ridgeline_gradient\/3 maps :height to "f"/,
+                   fn ->
+                     @ridges
+                     |> Map.put("f", ~w(a a a b b b))
+                     |> Plot.new(%{x: :x, y: :y, height: :f})
+                     |> GigRidges.geom_ridgeline_gradient()
+                     |> Giggly.layer_data()
+                   end
+
+      assert_raise ArgumentError,
+                   ~r/^GigRidges.geom_density_ridges_gradient\/3 maps :scale to "g"/,
+                   fn ->
+                     @spread
+                     |> Plot.new(%{x: :v, y: :g, scale: :g})
+                     |> GigRidges.geom_density_ridges_gradient()
+                     |> Giggly.layer_data()
+                   end
     end
 
     test "take their geoms' options and gradient_lwd, naming themselves in their refusals" do
