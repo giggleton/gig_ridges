@@ -111,6 +111,65 @@ defmodule GigRidgesTest do
       assert ymax == [nil, 0.9, 0.3, 1.5, nil, nil]
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_ridgeline(aes(min_height = m))` over heights
+    # 0.2, 0.9, 1, 0.9, 0.3 on two ridges, m 0.5 on the first and NA on the second, draws 3 points
+    # of the first ridge and all 5 of the second; over heights 0.2, -0.5, 1, 0.9, 0.3 with m NA, all
+    # 5, the one below 0 too, which an unmapped min_height leaves out.
+    test "never cuts off a point whose mapped min_height is missing" do
+      kept = fn heights, cut_offs ->
+        %{"x" => [1, 2, 3, 4, 5, 1, 2, 3, 4, 5], "h" => heights, "m" => cut_offs}
+        |> Map.put("y", [0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y, min_height: :m})
+        |> GigRidges.geom_ridgeline()
+        |> Giggly.layer_data()
+        |> DataFrame.split(:group)
+        |> Enum.sort()
+        |> Enum.map(fn {_group, rows} ->
+          rows |> DataFrame.pull(:ymax) |> Enum.count(&is_number/1)
+        end)
+      end
+
+      heights = [0.2, 0.9, 1, 0.9, 0.3]
+      assert kept.(heights ++ heights, List.duplicate(0.5, 5) ++ List.duplicate(nil, 5)) == [3, 5]
+
+      below = [0.2, -0.5, 1, 0.9, 0.3]
+      assert kept.(below ++ below, List.duplicate(nil, 10)) == [5, 5]
+    end
+
+    test "takes its aesthetics mapped in its own mapping, as in the plot's" do
+      ymax =
+        @ridges
+        |> Map.merge(%{"s" => List.duplicate(2, 6), "m" => List.duplicate(0.3, 6)})
+        |> Plot.new(%{})
+        |> GigRidges.geom_ridgeline(%{
+          x: :x,
+          y: :y,
+          height: :h,
+          group: :y,
+          scale: :s,
+          min_height: :m
+        })
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+
+      assert ymax == [nil, 1.8, 0.6, 2.0, 1.8, nil]
+    end
+
+    test "takes a colour, line width and line type set for every ridge" do
+      plot = Plot.new(@ridges, %{x: :x, y: :y, height: :h, group: :y})
+
+      looks = fn options ->
+        frame = plot |> GigRidges.geom_ridgeline(options) |> Giggly.layer_data()
+        for column <- [:color, :linewidth, :linetype], do: frame |> DataFrame.pull(column) |> hd()
+      end
+
+      [_color, _width, solid] = looks.([])
+      [color, width, dashed] = looks.(colour: "#FF0000", linewidth: 2, linetype: :dashed)
+
+      assert {color, width} == {"#FF0000", 2.0}
+      assert dashed != solid
+    end
+
     test "refuses options it does not take and mistakes, naming itself" do
       plot = Plot.new(@ridges, %{x: :x, y: :y, height: :h})
 
@@ -397,6 +456,65 @@ defmodule GigRidgesTest do
         |> Plot.facet_wrap(:g)
 
       assert kept.(faceted) == [182, 0]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b of the test above on baselines 0 and 3,
+    # `geom_density_ridges(aes(group = y), bandwidth = 1, rel_min_height = 0.5)`: a keeps 60 of
+    # its 512 places and b none, as 1 apart, the cut-off a share of the greatest height whatever
+    # the ridges' spacing; and `aes(rel_min_height = r)`, r 0.5 for a and NA for b, mapped in the
+    # layer's own mapping, keeps 60 of a's and every one of b's.
+    test "cuts off by a share of the greatest height whatever the spacing, none where missing" do
+      frame = %{
+        "v" => [-1, -0.5, 0, 0, 0.5, 1, -9, -6, -3, 0, 3, 6, 9],
+        "y" => List.duplicate(0, 6) ++ List.duplicate(3, 7),
+        "r" => List.duplicate(0.5, 6) ++ List.duplicate(nil, 7)
+      }
+
+      kept = fn layered ->
+        layered
+        |> Giggly.layer_data()
+        |> DataFrame.split(:group)
+        |> Enum.sort()
+        |> Enum.map(fn {_group, rows} ->
+          rows |> DataFrame.pull(:ymax) |> Enum.count(&is_number/1)
+        end)
+      end
+
+      given =
+        frame
+        |> Plot.new(%{x: :v, y: :y, group: :y})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, rel_min_height: 0.5)
+
+      assert kept.(given) == [60, 0]
+
+      mapped =
+        frame
+        |> Plot.new(%{})
+        |> GigRidges.geom_density_ridges(%{x: :v, y: :y, group: :y, rel_min_height: :r},
+          bandwidth: 1
+        )
+
+      assert kept.(mapped) == [60, 512]
+    end
+
+    test "takes a rel_min_height from 0 to 1 and refuses one outside", %{plot: plot} do
+      kept = fn share ->
+        plot
+        |> GigRidges.geom_density_ridges(rel_min_height: share)
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+        |> Enum.count(&is_number/1)
+      end
+
+      # 0 leaves out no place of the 7 classes' ridges; 1, all but those at the greatest height.
+      assert kept.(0) == 7 * 512
+      assert kept.(1) in 1..511
+
+      for share <- [1.5, -0.1, :half] do
+        assert_raise NimbleOptions.ValidationError, ~r/got: #{inspect(share)}/, fn ->
+          GigRidges.geom_density_ridges(plot, rel_min_height: share)
+        end
+      end
     end
 
     # ggridges 0.5.7 on ggplot2 4.0.3: `geom_density_ridges()` has no `min_height`; given, it is

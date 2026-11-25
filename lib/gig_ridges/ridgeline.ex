@@ -5,8 +5,9 @@ defmodule GigRidges.Ridgeline do
   front so a lower ridge is drawn over the one above it.
 
   A point whose height is below `min_height` is left out of its ridge, which breaks there; with no
-  `min_height`, a point below 0 is. The density ridges' geom (`GigRidges.DensityRidgeline`) cuts
-  at `rel_min_height` times the layer's greatest height, across every panel, in its place.
+  `min_height`, a point below 0 is, and a point whose mapped `min_height` is missing is never cut
+  off. The density ridges' geom (`GigRidges.DensityRidgeline`) cuts at `rel_min_height` times the
+  layer's greatest height, across every panel, in its place.
 
   `scale` and `min_height` are each an option and an aesthetic: given as an option, its value is
   every point's; else a mapped column gives each point its own; else its default, a `scale` of 1,
@@ -127,9 +128,10 @@ defmodule GigRidges.Ridgeline do
         cut_offs(ridgeline, frame, greatest)
       ]
       |> Enum.zip_with(fn [baseline, height, scale, least] ->
-        if Enum.all?([baseline, height, scale, least], &is_number/1) and height >= least,
-          do: {baseline, baseline + scale * height},
-          else: {nil, nil}
+        if Enum.all?([baseline, height, scale], &is_number/1) and
+             (is_nil(least) or height >= least),
+           do: {baseline, baseline + scale * height},
+           else: {nil, nil}
       end)
       |> Enum.unzip()
 
@@ -166,7 +168,7 @@ defmodule GigRidges.Ridgeline do
 
   # Each point's cut-off, the height below which it is left out: its `min_height`, 0 where none is
   # given or mapped; or, under the density ridges' geom, its `rel_min_height` times the layer's
-  # greatest height, 0 where none is.
+  # greatest height, 0 where none is. A mapped value missing is `nil`, no cut-off at all.
   defp cut_offs(%__MODULE__{cut_off: :min_height} = ridgeline, frame, _greatest),
     do: each_point(ridgeline.min_height, frame, :min_height, 0.0)
 

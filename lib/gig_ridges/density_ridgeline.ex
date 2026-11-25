@@ -8,7 +8,8 @@ defmodule GigRidges.DensityRidgeline do
   A point whose height is below `rel_min_height` times the layer's greatest height, across every
   panel, is left out of its ridge, which breaks there. Like `scale`, `rel_min_height` is an option
   and an aesthetic: given as an option, a share from 0 to 1, its value is every point's; else a
-  mapped column gives each point its own; else 0, and no point is left out.
+  mapped column gives each point its own, a point whose value is missing never cut off; else 0,
+  and no point is left out.
   """
 
   use Giggly.Geom
