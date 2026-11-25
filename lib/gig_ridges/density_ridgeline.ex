@@ -16,7 +16,9 @@ defmodule GigRidges.DensityRidgeline do
   of the point's panel, or of the layer under `panel_scaling: false`, so the tallest ridge reaches
   the next baseline at a `scale` of 1, whatever height is mapped. Over one baseline, `iscale` is
   1, and the heights are drawn as they are; where the greatest height is 0, a point has no
-  `iscale`, and is left out. The cut-off is taken on the heights scaled.
+  `iscale`, and is left out. A point with no baseline is left out and the rest spaced by the
+  baselines given, where ggridges draws none of the layer. The cut-off is taken on the heights
+  scaled.
   """
 
   use Giggly.Geom

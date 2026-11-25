@@ -662,6 +662,27 @@ defmodule GigRidgesTest do
       assert reaches.(missing, [scale: 1], false) == [2.0, 1.0]
     end
 
+    # Departure: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges(stat = "identity")` over
+    # heights on baselines 0 and 2 and one more with its baseline missing, gives every point a
+    # missing `iscale` and draws nothing, one missing baseline blanking the layer. gig_ridges
+    # leaves that point out, as ggplot2 leaves out a row missing an aesthetic it needs, and
+    # scales the rest by the spacing of the baselines given, 2, over the greatest height, 0.3.
+    test "leaves out a point with no baseline, the others scaled by the baselines given" do
+      ymax =
+        %{
+          "x" => [1, 2, 3, 4, 5, 6],
+          "y" => [0, 0, 0, 2, 2, nil],
+          "d" => [0.1, 0.3, 0.2, 0.1, 0.2, 0.1]
+        }
+        |> Plot.new(%{x: :x, y: :y, height: :d})
+        |> Plot.layer(%{}, stat: :identity, geom: GigRidges.DensityRidgeline, scale: 1)
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+        |> Enum.map(&(&1 && Float.round(&1, 9)))
+
+      assert ymax == [0.666666667, 2.0, 1.333333333, 2.666666667, 3.333333333, nil]
+    end
+
     # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b of @spread on baselines 0 and 3,
     # `bandwidth = 1`: `layer_data()` keeps `height` the density, greatest 0.3307764, beside
     # `iscale`, 9.06957, the tallest reaching 5.4; `aes(height = after_stat(ndensity))` reaches 5.4
