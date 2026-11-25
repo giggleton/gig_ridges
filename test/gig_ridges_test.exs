@@ -2913,6 +2913,182 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "cyclical scales" do
+    # Five ridges, their levels a to e, given out of order.
+    @five %{
+      "v" => List.flatten(List.duplicate([-1, 0, 0, 1], 5)),
+      "g" => Enum.flat_map(~w(e a c b d), &List.duplicate(&1, 4))
+    }
+
+    defp five(mapping, scales) do
+      @five
+      |> Plot.new(Map.merge(%{x: :v, y: :g}, mapping))
+      |> GigRidges.geom_density_ridges(bandwidth: 1)
+      |> scales.()
+    end
+
+    # Each ridge's `columns`, a to e.
+    defp per_ridge(plot, columns) do
+      frame = Giggly.layer_data(plot)
+
+      [:group | columns]
+      |> Enum.map(&DataFrame.pull(frame, &1))
+      |> Enum.zip()
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.map(&(&1 |> Tuple.to_list() |> tl()))
+    end
+
+    # The legend's keys' fills and their labels.
+    defp legend(plot) do
+      svg = plot |> Plot.theme_void() |> Giggly.to_svg() |> IO.iodata_to_binary()
+      fills = Regex.scan(~r/<rect [^>]*stroke: #000000;[^>]*fill: (#[0-9A-F]{6})/, svg)
+      labels = Regex.scan(~r/<text[^>]*>([^<]*)<\/text>/, svg)
+      {Enum.map(fills, &List.last/1), Enum.map(labels, &List.last/1)}
+    end
+
+    @red "#FF0000"
+    @blue "#0000FF"
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges() + scale_fill_cyclical(values
+    # = c("red", "blue"))` over five ridges, levels a to e given out of order: a to e red, blue,
+    # red, blue and red, and no legend; three fills and two colours each cycling alone, red and
+    # black, blue and white, green and black, red and white, blue and black; under `limits = c("b",
+    # "a", "c", "d", "e")` b red, a blue, c red, d blue, e red; and under `cyclical_scale(c("fill",
+    # "colour"))` both alike.
+    test "hands its values to the levels in turn, starting again once they run out" do
+      fill = &GigRidges.scale_fill_cyclical(&1, values: ["red", "blue"])
+      plot = five(%{fill: :g}, fill)
+      assert per_ridge(plot, [:fill]) == Enum.map([@red, @blue, @red, @blue, @red], &[&1])
+      assert legend(plot) == {[], []}
+
+      both =
+        five(%{fill: :g, colour: :g}, fn plot ->
+          plot
+          |> GigRidges.scale_fill_cyclical(values: ["red", "blue", "green"])
+          |> GigRidges.scale_colour_cyclical(values: ["black", "white"])
+        end)
+
+      assert per_ridge(both, [:fill, :color]) == [
+               [@red, "#000000"],
+               [@blue, "#FFFFFF"],
+               ["#008000", "#000000"],
+               [@red, "#FFFFFF"],
+               [@blue, "#000000"]
+             ]
+
+      limited =
+        five(
+          %{fill: :g},
+          &GigRidges.scale_fill_cyclical(&1, values: ["red", "blue"], limits: ~w(b a c d e))
+        )
+
+      assert per_ridge(limited, [:fill]) == Enum.map([@blue, @red, @red, @blue, @red], &[&1])
+
+      alike =
+        five(
+          %{fill: :g, colour: :g},
+          &GigRidges.cyclical_scale(&1, [:fill, :colour], values: ["red", "blue"])
+        )
+
+      assert per_ridge(alike, [:fill, :color]) ==
+               Enum.map([@red, @blue, @red, @blue, @red], &[&1, &1])
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `scale_fill_cyclical(values = c("red", "blue"),
+    # guide = "legend")`: a key for each of a to e, red and blue in turn; with `breaks = c("a",
+    # "b"), labels = c("odd", "even")` two keys, red "odd" and blue "even"; with `breaks = c("b",
+    # "c")` blue b and red c, each key its own value's, the ridges cycling as without breaks.
+    test "draws a legend only when asked, its keys the breaks', each as its own value is" do
+      cyclical = fn options ->
+        five(
+          %{fill: :g},
+          &GigRidges.scale_fill_cyclical(&1, [values: ["red", "blue"]] ++ options)
+        )
+      end
+
+      assert legend(cyclical.(guide: :legend)) ==
+               {[@red, @blue, @red, @blue, @red], ~w(g a b c d e)}
+
+      labelled = cyclical.(guide: :legend, breaks: ["a", "b"], labels: ["odd", "even"])
+      assert legend(labelled) == {[@red, @blue], ~w(g odd even)}
+      assert per_ridge(labelled, [:fill]) == Enum.map([@red, @blue, @red, @blue, @red], &[&1])
+
+      assert legend(cyclical.(guide: :legend, breaks: [{"a", "odd"}, {"b", "even"}])) ==
+               {[@red, @blue], ~w(g odd even)}
+
+      chosen = cyclical.(guide: :legend, breaks: ["b", "c"])
+      assert legend(chosen) == {[@blue, @red], ~w(g b c)}
+      assert per_ridge(chosen, [:fill]) == Enum.map([@red, @blue, @red, @blue, @red], &[&1])
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: `scale_alpha_cyclical(values = c(0.3, 0.9))`,
+    # `scale_linetype_cyclical(values = c("solid", "dashed", "dotted"))` and
+    # `scale_linewidth_cyclical(values = c(0.5, 2))` over a to e: 0.3, solid and 0.5; 0.9,
+    # dashed and 2; 0.3, dotted and 0.5; 0.9, solid and 2; 0.3, dashed and 0.5; and
+    # `scale_size_cyclical(values = c(1, 3))` 1, 3, 1, 3 and 1.
+    test "cycles alpha, line type, line width and size alike" do
+      plot =
+        five(%{alpha: :g, linetype: :g, linewidth: :g}, fn plot ->
+          plot
+          |> GigRidges.scale_alpha_cyclical(values: [0.3, 0.9])
+          |> GigRidges.scale_linetype_cyclical(values: [:solid, :dashed, :dotted])
+          |> GigRidges.scale_linewidth_cyclical(values: [0.5, 2])
+        end)
+
+      assert per_ridge(plot, [:alpha, :linetype, :linewidth]) == [
+               [0.3, {}, 0.5],
+               [0.9, {4, 4}, 2.0],
+               [0.3, {1, 3}, 0.5],
+               [0.9, {}, 2.0],
+               [0.3, {4, 4}, 0.5]
+             ]
+
+      sized =
+        @five
+        |> Plot.new(%{x: :v, y: :g, size: :g})
+        |> Plot.geom_point()
+        |> GigRidges.scale_size_cyclical(values: [1, 3])
+        |> per_ridge([:size])
+
+      assert sized == Enum.map([1.0, 3.0, 1.0, 3.0, 1.0], &[&1])
+
+      colour =
+        five(%{colour: :g}, &GigRidges.scale_color_cyclical(&1, values: ["red", "blue"]))
+
+      assert per_ridge(colour, [:color]) == Enum.map([@red, @blue, @red, @blue, @red], &[&1])
+    end
+
+    # Its values are repeated to a thousand, or to as many as the limits given, so a scale showing
+    # more refuses the plot, as a manual scale given too few values does.
+    test "serves a thousand values, or as many as its limits" do
+      levels = Enum.map(1..1001, &"v#{&1}")
+
+      points = fn options ->
+        %{"x" => Enum.to_list(1..1001), "y" => Enum.to_list(1..1001), "c" => levels}
+        |> Plot.new(%{x: :x, y: :y, colour: :c})
+        |> Plot.geom_point()
+        |> GigRidges.scale_colour_cyclical([values: ["red", "blue"]] ++ options)
+      end
+
+      assert_raise ArgumentError, ~r/1001/, fn -> Giggly.layer_data(points.([])) end
+
+      colours = points.(limits: levels) |> Giggly.layer_data() |> DataFrame.pull(:color)
+      assert length(colours) == 1001
+      assert colours |> Enum.uniq() |> Enum.sort() == [@blue, @red]
+    end
+
+    # Departure: ggridges cycles named values in order, ignoring their names; a map has no order
+    # to cycle, so gig_ridges refuses one.
+    test "refuses values that are not a list of one value or more, naming the function" do
+      for values <- [nil, [], %{"a" => "red"}] do
+        assert_raise ArgumentError, ~r/GigRidges.scale_fill_cyclical\/2 takes values:/, fn ->
+          five(%{fill: :g}, &GigRidges.scale_fill_cyclical(&1, values: values))
+        end
+      end
+    end
+  end
+
   describe "GigRidges.PointsRaincloud" do
     # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
     # bandwidth = 1, jittered_points = TRUE, quantile_lines = TRUE, position =

@@ -11,7 +11,8 @@ defmodule GigRidges do
   draw a ridge whose fill varies along it. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
-  own, and its mistakes are refused naming it.
+  own, and its mistakes are refused naming it. `cyclical_scale/3` and the `scale_*_cyclical/2`
+  functions give the ridges values in turn, as alternating fills, through Giggly's manual scales.
 
       iex> frame =
       ...>   GigDatasets.mpg()
@@ -240,6 +241,99 @@ defmodule GigRidges do
     components = {GigRidges.DensityRidges, GigRidges.DensityRidgeline2}
     layer(plot, mapping, sina(options), components, "GigRidges.geom_density_ridges2/3")
   end
+
+  @doc """
+  Gives the plot one cyclical scale serving every aesthetic `aesthetics` names, replacing any
+  scale that served one of them, as ggridges' `cyclical_scale()`: `values:`, a list, handed to the
+  data's values in the order the scale shows them and started again at the first once they run
+  out, so the ridges take turns, as `values: ["red", "blue"]` fills five ridges red, blue, red,
+  blue and red.
+
+  It is Giggly's manual scale (`Giggly.Plot.scale_discrete_manual/3`), its values repeated, and
+  takes its options, which check every value given as the aesthetics they serve check one, and
+  its aesthetics, `:color` and `:fill` together, any of `:alpha`, `:size` and `:linewidth`, or
+  `:linetype`, `:colour` spelled either way. Its legend is drawn only under `guide: :legend`,
+  where `breaks:` chooses its keys, each drawn as its own value is, and `labels:` labels them, as
+  `breaks: ["a", "b"], labels: ["odd", "even"]` labels a cycle of two. Its values are repeated to
+  a thousand, or to as many as `limits:` gives, and a scale showing more refuses the plot, as a
+  manual scale given too few values does. Raises `ArgumentError` for `values:` that are not a list
+  of one value or more.
+
+      iex> frame =
+      ...>   %{"v" => [0, 1, 2, 0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b c c c)}
+      ...>   |> Giggly.Plot.new(%{x: :v, y: :g, fill: :g, colour: :g})
+      ...>   |> GigRidges.geom_density_ridges(bandwidth: 1)
+      ...>   |> GigRidges.cyclical_scale([:fill, :colour], values: ["red", "blue"])
+      ...>   |> Giggly.layer_data()
+      iex> frame |> Giggly.DataFrame.pull(:fill) |> Enum.dedup()
+      ["#FF0000", "#0000FF", "#FF0000"]
+  """
+  @spec cyclical_scale(Plot.t(), atom() | [atom()], keyword()) :: Plot.t()
+  def cyclical_scale(%Plot{} = plot, aesthetics, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, aesthetics, options, "GigRidges.cyclical_scale/3")
+
+  @doc """
+  Gives the plot a cyclical fill scale, replacing any fill scale it had: `cyclical_scale/3` serving
+  `:fill`, as ggridges' `scale_fill_cyclical()`.
+
+      iex> frame =
+      ...>   %{"v" => [0, 1, 2, 0, 1, 2, 0, 1, 2], "g" => ~w(a a a b b b c c c)}
+      ...>   |> Giggly.Plot.new(%{x: :v, y: :g, fill: :g})
+      ...>   |> GigRidges.geom_density_ridges(bandwidth: 1)
+      ...>   |> GigRidges.scale_fill_cyclical(values: ["red", "blue"])
+      ...>   |> Giggly.layer_data()
+      iex> frame |> Giggly.DataFrame.pull(:fill) |> Enum.dedup()
+      ["#FF0000", "#0000FF", "#FF0000"]
+  """
+  @spec scale_fill_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_fill_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :fill, options, "GigRidges.scale_fill_cyclical/2")
+
+  @doc """
+  Gives the plot a cyclical colour scale, replacing any colour scale it had: `cyclical_scale/3`
+  serving `:color`, as ggridges' `scale_colour_cyclical()`.
+  """
+  @spec scale_colour_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_colour_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :color, options, "GigRidges.scale_colour_cyclical/2")
+
+  @doc "The cyclical colour scale `scale_colour_cyclical/2` gives, as ggridges' `scale_color_cyclical()`."
+  @spec scale_color_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_color_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :color, options, "GigRidges.scale_color_cyclical/2")
+
+  @doc """
+  Gives the plot a cyclical alpha scale, replacing any alpha scale it had: `cyclical_scale/3`
+  serving `:alpha`, as ggridges' `scale_alpha_cyclical()`.
+  """
+  @spec scale_alpha_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_alpha_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :alpha, options, "GigRidges.scale_alpha_cyclical/2")
+
+  @doc """
+  Gives the plot a cyclical line type scale, replacing any line type scale it had:
+  `cyclical_scale/3` serving `:linetype`, as ggridges' `scale_linetype_cyclical()`.
+  """
+  @spec scale_linetype_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_linetype_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :linetype, options, "GigRidges.scale_linetype_cyclical/2")
+
+  @doc """
+  Gives the plot a cyclical line width scale, replacing any line width scale it had:
+  `cyclical_scale/3` serving `:linewidth`, as ggridges' `scale_linewidth_cyclical()`.
+  """
+  @spec scale_linewidth_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_linewidth_cyclical(%Plot{} = plot, options) when is_list(options),
+    do:
+      GigRidges.Cyclical.scale(plot, :linewidth, options, "GigRidges.scale_linewidth_cyclical/2")
+
+  @doc """
+  Gives the plot a cyclical size scale, replacing any size scale it had: `cyclical_scale/3`
+  serving `:size`, as ggridges' `scale_size_cyclical()`.
+  """
+  @spec scale_size_cyclical(Plot.t(), keyword()) :: Plot.t()
+  def scale_size_cyclical(%Plot{} = plot, options) when is_list(options),
+    do: GigRidges.Cyclical.scale(plot, :size, options, "GigRidges.scale_size_cyclical/2")
 
   # A layer of density ridges, drawn by the density ridges' geom, 1.8 times their height unless
   # `scale` is given or mapped.

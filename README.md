@@ -70,6 +70,13 @@ each up to `width:` across and `height:` up or down from `yoffset:` above its ba
 {GigRidges.PointsRaincloud, ...}`, ggridges' `position_raincloud()`, drops each into a band
 `height:` deep, `ygap:` below its baseline, as rain below a cloud.
 
+`GigRidges.cyclical_scale/3`, `scale_fill_cyclical/2`, `scale_colour_cyclical/2` (or
+`scale_color_cyclical/2`), `scale_alpha_cyclical/2`, `scale_linetype_cyclical/2`,
+`scale_linewidth_cyclical/2` and `scale_size_cyclical/2` hand their `values:` to the ridges in
+turn, starting again once they run out, as `scale_fill_cyclical(values: ["red", "blue"])` fills
+them alternately, with no legend unless `guide: :legend` asks for one, its keys chosen by
+`breaks:` and labelled by `labels:`. They are Giggly's manual scales, their values repeated.
+
 ## Relationship to ggridges
 
 The idea of the ridgeline plot, and the names of these functions and their options, follow R's
