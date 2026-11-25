@@ -101,7 +101,7 @@ defmodule GigRidges.DensityRidges do
   def default_mapping(_stat), do: %{height: :height}
 
   @impl Giggly.Stat
-  def computed_variables(_stat), do: [:density, :ndensity, :height]
+  def computed_variables(_stat), do: [:x, :density, :ndensity, :height]
 
   @impl Giggly.Stat
   def numeric_aesthetics(_stat),

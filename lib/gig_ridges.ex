@@ -7,7 +7,8 @@ defmodule GigRidges do
   `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge, and
   `geom_density_ridges2/3` draws it outlined round its whole border; `geom_density_line/3` draws
   one density over a baseline of 0 the way the ridges are drawn; `stat_binline/3` draws each
-  group's histogram as a ridge. Each
+  group's histogram as a ridge; `geom_ridgeline_gradient/3` and `geom_density_ridges_gradient/3`
+  draw a ridge whose fill varies along it. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it.
@@ -51,6 +52,27 @@ defmodule GigRidges do
   def geom_ridgeline(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     layer(plot, mapping, options, {:identity, GigRidges.Ridgeline}, "GigRidges.geom_ridgeline/3")
+  end
+
+  @doc """
+  Adds the layer `geom_ridgeline/3` adds, from the same mapping and options, but a ridge whose
+  `fill` varies along it drawn in pieces of one fill each (`GigRidges.RidgelineGradient`), as
+  `%{fill: :x}` fills each ridge by where along it each point is.
+
+  It takes `gradient_lwd:` beside the ridgeline's options: the width of each piece's outline in
+  its own fill, in R's line-width units, 0.5 unless given, so the seams between pieces do not
+  show.
+  """
+  @spec geom_ridgeline_gradient(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def geom_ridgeline_gradient(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def geom_ridgeline_gradient(%Plot{} = plot, options, []) when is_list(options),
+    do: geom_ridgeline_gradient(plot, %{}, options)
+
+  def geom_ridgeline_gradient(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    components = {:identity, GigRidges.RidgelineGradient}
+    layer(plot, mapping, options, components, "GigRidges.geom_ridgeline_gradient/3")
   end
 
   @doc """
@@ -125,6 +147,25 @@ defmodule GigRidges do
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
+  end
+
+  @doc """
+  Adds the layer `geom_density_ridges/3` adds, from the same mapping and options, but a ridge
+  whose `fill` varies along it drawn in pieces of one fill each
+  (`GigRidges.DensityRidgelineGradient`), as `%{fill: {:after_stat, [:x]}}` fills each ridge by
+  where along it each place is; and `gradient_lwd:`, each piece's outline in its own fill, 0.5
+  unless given.
+  """
+  @spec geom_density_ridges_gradient(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def geom_density_ridges_gradient(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def geom_density_ridges_gradient(%Plot{} = plot, options, []) when is_list(options),
+    do: geom_density_ridges_gradient(plot, %{}, options)
+
+  def geom_density_ridges_gradient(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    components = {GigRidges.DensityRidges, GigRidges.DensityRidgelineGradient}
+    layer(plot, mapping, options, components, "GigRidges.geom_density_ridges_gradient/3")
   end
 
   @doc """

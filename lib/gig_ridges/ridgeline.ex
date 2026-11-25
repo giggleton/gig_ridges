@@ -24,6 +24,7 @@ defmodule GigRidges.Ridgeline do
   use Giggly.Geom
 
   alias Giggly.{DataFrame, Geom}
+  alias GigRidges.Gradient
 
   # Points, 1/72 inch, in a millimetre, as key sizes are given.
   @points_per_millimetre 72 / 25.4
@@ -39,7 +40,9 @@ defmodule GigRidges.Ridgeline do
   # top alone here and the whole border under the closed density ridges' geom. `along` is the axis
   # the ridges run along, `x` here and `y` under the vertical ridgeline's geom
   # (`GigRidges.VRidgeline`), whose ridges reach `scale` times their `width` beyond their `x`, cut
-  # off by `min_width`, which `min_height` holds then.
+  # off by `min_width`, which `min_height` holds then. `gradient` is `:none`, or, under the gradient
+  # ridgelines' geoms, the width in millimetres of the outline round each piece of one fill that a
+  # ridge whose fill varies is drawn in (`GigRidges.Gradient`).
   defstruct scale: :none,
             min_height: :none,
             rel_min_height: :none,
@@ -47,7 +50,8 @@ defmodule GigRidges.Ridgeline do
             unmapped_scale: 1.0,
             iscaled: false,
             outline: :upper,
-            along: :x
+            along: :x,
+            gradient: :none
 
   @type t :: %__MODULE__{
           scale: :none | float(),
@@ -57,7 +61,8 @@ defmodule GigRidges.Ridgeline do
           unmapped_scale: float(),
           iscaled: boolean(),
           outline: :upper | :full,
-          along: :x | :y
+          along: :x | :y,
+          gradient: :none | float()
         }
 
   @impl Giggly.Geom
@@ -173,7 +178,7 @@ defmodule GigRidges.Ridgeline do
     |> DataFrame.split(:group)
     |> Map.values()
     |> Enum.sort_by(&baseline(&1, columns(ridgeline.along).low), :desc)
-    |> Enum.flat_map(fn ridge -> Geom.draw_panel(ribbon(ridgeline), ridge, context) end)
+    |> Enum.flat_map(fn ridge -> draw_ridge(ridgeline, ridge, context) end)
   end
 
   @impl Giggly.Geom
@@ -193,6 +198,13 @@ defmodule GigRidges.Ridgeline do
 
     {side, side}
   end
+
+  # A ridge drawn by the ribbon, or in pieces of one fill each under the gradient ridgelines' geoms.
+  defp draw_ridge(%__MODULE__{gradient: :none} = ridgeline, ridge, context),
+    do: Geom.draw_panel(ribbon(ridgeline), ridge, context)
+
+  defp draw_ridge(%__MODULE__{gradient: width}, ridge, context),
+    do: Gradient.draw(ridge, width, context)
 
   # Each point's height, times its `iscale` under the density ridges' geom; missing where either
   # is.

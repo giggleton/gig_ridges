@@ -40,6 +40,10 @@ GigDatasets.mpg()
   given or mapped, so neighbouring ridges overlap.
 - `GigRidges.geom_density_ridges2/3` draws the same ridges, each outlined round its whole border,
   its baseline too, not along its top alone.
+- `GigRidges.geom_ridgeline_gradient/3` and `GigRidges.geom_density_ridges_gradient/3` draw
+  those ridges with a fill that varies along each, as `%{fill: :x}` or
+  `%{fill: {:after_stat, [:x]}}` maps one, in pieces of one fill each, outlined in it
+  `gradient_lwd:` wide so the seams do not show.
 - `GigRidges.stat_binline/3` counts each group in bins along `x` and draws the histogram's
   outline as a ridge, taking `binwidth:`, `bins:`, `center:`, `boundary:`, `breaks:`, `closed:`,
   `pad:` and `draw_baseline:`.

@@ -26,15 +26,22 @@ defmodule GigRidges.DensityRidgeline do
   alias Giggly.DataFrame
   alias GigRidges.Ridgeline
 
-  # `outline` is no option: the ridges' outline, the top alone here, and the whole border under the
-  # closed density ridges' geom (`GigRidges.DensityRidgeline2`), which builds the struct itself.
-  defstruct scale: :none, rel_min_height: :none, panel_scaling: true, outline: :upper
+  # `outline` and `gradient` are no options: the ridges' outline, the top alone here, and the whole
+  # border under the closed density ridges' geom (`GigRidges.DensityRidgeline2`); and `:none`, or
+  # the width of the pieces' outlines under the gradient density ridges' geom
+  # (`GigRidges.DensityRidgelineGradient`), each geom building the struct itself.
+  defstruct scale: :none,
+            rel_min_height: :none,
+            panel_scaling: true,
+            outline: :upper,
+            gradient: :none
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           rel_min_height: :none | float(),
           panel_scaling: boolean(),
-          outline: :upper | :full
+          outline: :upper | :full,
+          gradient: :none | float()
         }
 
   @unmapped_scale 1.8

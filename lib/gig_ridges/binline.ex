@@ -121,7 +121,7 @@ defmodule GigRidges.Binline do
 
   @impl Giggly.Stat
   def computed_variables(_stat),
-    do: [:count, :density, :ncount, :ndensity, :height, :xmin, :xmax, :width]
+    do: [:x, :count, :density, :ncount, :ndensity, :height, :xmin, :xmax, :width]
 
   @impl Giggly.Stat
   def numeric_aesthetics(_stat), do: [x: "each group's values are counted in bins along it"]

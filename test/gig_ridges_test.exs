@@ -1750,7 +1750,7 @@ defmodule GigRidgesTest do
     end
 
     test "maps a height to any of its variables, and keeps none of its gathering" do
-      for variable <- [:count, :density, :ncount, :ndensity, :height, :xmin, :xmax, :width] do
+      for variable <- [:x, :count, :density, :ncount, :ndensity, :height, :xmin, :xmax, :width] do
         frame =
           @spread
           |> Plot.new(%{x: :v, y: :g, height: {:after_stat, [variable]}})
@@ -1816,6 +1816,125 @@ defmodule GigRidgesTest do
 
       assert_raise ArgumentError, ~r/^GigRidges.stat_binline\/3 maps :x to "g"/, fn ->
         @spread |> Plot.new(%{x: :g, y: :g}) |> GigRidges.stat_binline() |> Giggly.layer_data()
+      end
+    end
+  end
+
+  describe "geom_ridgeline_gradient/3 and geom_density_ridges_gradient/3" do
+    # Each piece and line drawn, in drawing order: its element, how many points, and its style.
+    defp drawn(plot) do
+      plot
+      |> Plot.theme_void()
+      |> Plot.theme(legend_position: :none)
+      |> Giggly.to_svg()
+      |> IO.iodata_to_binary()
+      |> then(&Regex.scan(~r/<(polygon|polyline) points='([^']*)' style='([^']*)'/, &1))
+      |> Enum.map(fn [_element, tag, points, style] ->
+        {tag, length(String.split(points, " ", trim: true)), style}
+      end)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_ridgeline_gradient(aes(fill = x))` over
+    # heights on x 1 to 4: each ridge drawn in pieces, one a point to the next, of 4, 4, 4 and 2
+    # points, filled #132B43, #28547A, #3E81B7 and #56B1F7 and outlined in that fill 0.5 of R's
+    # line-width units wide, 0.38 points, then its top line, black 0.5 mm; a fill of a, a, b, b
+    # in pieces of 6 and 4 points, a run to the next run's first point; one fill, one piece of 8;
+    # and `gradient_lwd = 2` outlines each 1.5 points wide.
+    test "draws a ridge whose fill varies in pieces of one fill, each outlined in it" do
+      ridges = %{
+        "x" => [1, 2, 3, 4, 1, 2, 3, 4],
+        "y" => [0, 0, 0, 0, 1, 1, 1, 1],
+        "h" => [0.2, 0.9, 0.3, 0.5, 0.5, 0.4, 0.1, 0.3],
+        "f" => ~w(a a b b a a b b)
+      }
+
+      layer = fn mapping, options ->
+        ridges
+        |> Plot.new(Map.merge(%{x: :x, y: :y, height: :h, group: :y}, mapping))
+        |> GigRidges.geom_ridgeline_gradient(options)
+        |> drawn()
+      end
+
+      piece = fn points, fill, width ->
+        {"polygon", points,
+         "stroke-width: #{width}; stroke: #{fill}; stroke-linecap: butt; fill: #{fill};"}
+      end
+
+      top =
+        {"polyline", 4, "stroke-width: 1.07; stroke: #000000; stroke-linecap: butt; fill: none;"}
+
+      by_x = [
+        piece.(4, "#132B43", "0.38"),
+        piece.(4, "#28547A", "0.38"),
+        piece.(4, "#3E81B7", "0.38"),
+        piece.(2, "#56B1F7", "0.38"),
+        top
+      ]
+
+      assert layer.(%{fill: :x}, []) == by_x ++ by_x
+
+      runs = [piece.(6, "#F8766D", "0.38"), piece.(4, "#00BFC4", "0.38"), top]
+      assert layer.(%{fill: :f}, []) == runs ++ runs
+
+      assert layer.(%{}, []) ==
+               List.duplicate([piece.(8, "#B3B3B3", "0.38"), top], 2) |> Enum.concat()
+
+      wide = layer.(%{fill: :x}, gradient_lwd: 2)
+      assert hd(wide) == piece.(4, "#132B43", "1.50")
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges_gradient(aes(fill =
+    # after_stat(x)), bandwidth = 1)` over @spread: each ridge's 512 places in 295 pieces, a run of
+    # places whose colours are one, filled from #132B43 at -12 to #56B1F7 at 12.
+    test "draws the density ridges in pieces of one fill along each ridge" do
+      plot =
+        @spread
+        |> Plot.new(%{x: :v, y: :g, fill: {:after_stat, [:x]}})
+        |> GigRidges.geom_density_ridges_gradient(bandwidth: 1)
+
+      fills = plot |> Giggly.layer_data() |> DataFrame.pull(:fill)
+      assert {hd(fills), Enum.at(fills, 511)} == {"#132B43", "#56B1F7"}
+
+      pieces = plot |> drawn() |> Enum.filter(&(elem(&1, 0) == "polygon"))
+      assert length(pieces) == 2 * 295
+      assert Enum.all?(pieces, fn {_tag, _points, style} -> style =~ "stroke-width: 0.38" end)
+    end
+
+    test "take their geoms' options and gradient_lwd, naming themselves in their refusals" do
+      ridges = Plot.new(@ridges, %{x: :x, y: :y, height: :h, group: :y})
+      density = Plot.new(@spread, %{x: :v, y: :g})
+
+      ymax =
+        ridges
+        |> GigRidges.geom_ridgeline_gradient(scale: 2, min_height: 0.3)
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+
+      assert ymax == [nil, 1.8, 0.6, 2.0, 1.8, nil]
+
+      reach =
+        density
+        |> GigRidges.geom_density_ridges_gradient(bandwidth: 1, scale: 1, panel_scaling: false)
+        |> Giggly.layer_data()
+        |> by_group([:ymin, :ymax])
+        |> Enum.map(fn [lows, highs] ->
+          highs |> Enum.zip_with(lows, &(&1 - &2)) |> Enum.max()
+        end)
+        |> Enum.max()
+
+      assert Float.round(reach, 9) == 1.0
+
+      for {layered, function} <- [
+            {&GigRidges.geom_ridgeline_gradient(ridges, &1), "geom_ridgeline_gradient"},
+            {&GigRidges.geom_density_ridges_gradient(density, &1), "geom_density_ridges_gradient"}
+          ] do
+        assert_raise NimbleOptions.ValidationError, ~r/:gradient_lwd.*got: -1/, fn ->
+          layered.(gradient_lwd: -1)
+        end
+
+        assert_raise ArgumentError, ~r/^GigRidges.#{function}\/3 sets :shape/, fn ->
+          layered.(shape: 1)
+        end
       end
     end
   end
