@@ -24,7 +24,8 @@ defmodule GigRidges.DensityRidges do
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density scaled so the panel's greatest reaches the
   spacing between baselines, or the layer's greatest under `panel_scaling: false`, which the
-  ridgeline draws above each baseline. A group's columns holding one value within it are carried.
+  ridgeline draws above each baseline. A group's columns holding one value within it are carried,
+  a `weight` among them where every group's is one value, as ggridges keeps it.
   """
 
   use Giggly.Stat
@@ -119,10 +120,6 @@ defmodule GigRidges.DensityRidges do
       weight: "each group's density spreads each row's weight"
     ]
 
-  # A weight is spread over the density's grid, so one mapped after the stat reaches nothing.
-  @impl Giggly.Stat
-  def dropped_aesthetics(_stat), do: [:weight]
-
   @doc false
   @spec validate_bandwidth(term()) :: {:ok, :nrd0 | float()} | {:error, String.t()}
   def validate_bandwidth(:nrd0), do: {:ok, :nrd0}
@@ -147,7 +144,7 @@ defmodule GigRidges.DensityRidges do
   @impl Giggly.Stat
   def compute_layer(stat, frame, _axes) do
     finite = DataFrame.filter(frame, {:and, [{:is_finite, [:x]}, {:is_finite, [:y]}]})
-    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x, :weight])
+    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x])
     weighed = if :weight in DataFrame.names(finite), do: [ws: {:list, [:weight]}], else: []
 
     groups =

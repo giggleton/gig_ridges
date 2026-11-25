@@ -487,8 +487,9 @@ defmodule GigRidgesTest do
     # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(aes(weight = w), bandwidth = 1,
     # from = -5, to = 5, n = 5)` over groups a and b, a weighed 1 to 6 and b 1 but 10 at its 0:
     # each density R's `density(x, bw = 1, weights = w / sum(w))`, the group's own weights; a
-    # zero weight at a's -0.5 reads a as though the row were gone; and the joint bandwidth, 2.15,
-    # the same weighted or not, reading the same places.
+    # zero weight at a's -0.5 reads a as though the row were gone; the weights over 100 read the
+    # same, totalling under 1; the joint bandwidth, 2.15, the same weighted or not, reading the
+    # same places; and a weight of 2 for a and 3 for b kept in `layer_data()`, one varying not.
     test "weighs each group's density by its rows' weights, the bandwidth unweighted" do
       weighed = fn weights, options ->
         @spread
@@ -506,13 +507,20 @@ defmodule GigRidgesTest do
       weights = [1, 2, 3, 4, 5, 6, 1, 1, 1, 10, 1, 1, 1]
       [[_, a], [_, b]] = weighed.(weights, bandwidth: 1, from: -5, to: 5, n: 5)
 
-      assert close?.(a, [
-               8.4505047118059456e-6,
-               1.8475417785424206e-2,
-               3.3092611642087810e-1,
-               5.6198022741306114e-2,
-               4.2694997695806398e-5
-             ])
+      a_golden = [
+        8.4505047118059456e-6,
+        1.8475417785424206e-2,
+        3.3092611642087810e-1,
+        5.6198022741306114e-2,
+        4.2694997695806398e-5
+      ]
+
+      assert close?.(a, a_golden)
+
+      [[_, hundredths] | _b] =
+        weighed.(Enum.map(weights, &(&1 / 100)), bandwidth: 1, from: -5, to: 5, n: 5)
+
+      assert close?.(hundredths, a_golden)
 
       assert close?.(b, [
                1.8509839275899817e-2,
@@ -536,6 +544,21 @@ defmodule GigRidgesTest do
       unweighted = @spread |> Plot.new(%{x: :v, y: :g}) |> GigRidges.stat_density_ridges()
       places = unweighted |> Giggly.layer_data() |> by_group([:x])
       assert Enum.map(weighed.(weights, []), &Enum.take(&1, 1)) == places
+
+      kept = fn weights ->
+        frame =
+          @spread
+          |> Map.put("w", weights)
+          |> Plot.new(%{x: :v, y: :g, weight: :w})
+          |> GigRidges.stat_density_ridges(bandwidth: 1)
+          |> Giggly.layer_data()
+
+        if :weight in DataFrame.names(frame),
+          do: frame |> by_group([:weight]) |> Enum.map(fn [w] -> Enum.uniq(w) end)
+      end
+
+      assert kept.(List.duplicate(2, 6) ++ List.duplicate(3, 7)) == [[2], [3]]
+      assert kept.(weights) == nil
     end
 
     # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b weighed as above: a's weight at -0.5
