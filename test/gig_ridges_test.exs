@@ -1059,6 +1059,34 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_ridgeline(aes(linewidth = w))`, w "thin",
+    # "wide" and NA on three ridges: three keys, the missing one's line too, each the theme's least,
+    # 17.345 TeX points, 17.28 in Giggly's.
+    test "gives a key whose line width is missing the theme's least room" do
+      ridges = %{
+        "x" => [1, 2, 3, 1, 2, 3, 1, 2, 3],
+        "y" => [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        "h" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1, 0.3, 0.3, 0.3],
+        "w" => ["thin", "thin", "thin", "wide", "wide", "wide", nil, nil, nil]
+      }
+
+      sides =
+        ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y, linewidth: :w})
+        |> GigRidges.geom_ridgeline()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(
+          &Regex.scan(~r/width='([0-9.]+)' height='([0-9.]+)' style='[^']*fill: #EBEBEB;'/, &1)
+        )
+        |> Enum.flat_map(fn
+          [_key, side, side] -> [side]
+          [_panel, _width, _height] -> []
+        end)
+
+      assert sides == ["17.28", "17.28", "17.28"]
+    end
+
     test "takes its mapping in its own call or the plot's, and no options" do
       plot = Plot.new(@spread, %{})
 
