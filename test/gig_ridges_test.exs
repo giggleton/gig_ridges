@@ -2701,6 +2701,40 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, rel_min_height = 0.5, quantile_lines = TRUE, jittered_points = TRUE, position
+    # = "identity")` over @spread: b's ridge, every height below half the layer's greatest, cut
+    # away, but its quantile lines and points kept, from its baseline, 2, up to the ridge's top
+    # there, 2.201623, 2.316774 and 2.201623 for the lines, 2.313393 to 2.316809 for the points,
+    # and all six lines and thirteen points drawn.
+    test "keeps the lines and points of a ridge cut away below its cut-off" do
+      cut =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(
+          bandwidth: 1,
+          rel_min_height: 0.5,
+          quantile_lines: true,
+          jittered_points: true,
+          position: :identity
+        )
+
+      frame = Giggly.layer_data(cut)
+      [ymin, ymax, group] = typed(frame, "vline", [:ymin, :ymax, :group])
+      b = fn values -> for {value, 2} <- Enum.zip(values, group), do: value end
+      assert b.(ymin) == [2, 2, 2]
+      assert close_to?(b.(ymax), [2.201623, 2.316774, 2.201623])
+
+      [ymin, ymax, group] = points(frame, [:ymin, :ymax, :group])
+      b = fn values -> for {value, 2} <- Enum.zip(values, group), do: value end
+      assert b.(ymin) == List.duplicate(2, 7)
+      assert Enum.all?(b.(ymax), &(&1 > 2.3133 and &1 < 2.3169))
+
+      svg = cut |> Plot.theme_void() |> Giggly.to_svg() |> IO.iodata_to_binary()
+      assert length(Regex.scan(~r/<line\b/, svg)) == 6
+      assert length(Regex.scan(~r/<circle\b/, svg)) == 13
+    end
+
     test "refuses points' styles Giggly refuses, and both spellings of their colour" do
       for {option, value} <- [
             point_shape: 26,
@@ -2875,6 +2909,135 @@ defmodule GigRidgesTest do
           end
 
         assert Exception.message(error) =~ inspect(value)
+      end
+    end
+  end
+
+  describe "GigRidges.PointsSina" do
+    # Each point's share of its ridge's height it is set up by.
+    defp shares(frame) do
+      [y, ymin, ymax] = points(frame, [:y, :ymin, :ymax])
+      Enum.zip_with([y, ymin, ymax], fn [y, low, top] -> (low - y) / (top - y) end)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, jittered_points = TRUE, quantile_lines = TRUE, position =
+    # position_points_sina(seed = 1))` over @spread: each point's `ymin` its baseline and a share
+    # from 0.02 to 0.98 of its ridge's height there, `ymax` less `y`; its `x`, `y` and `ymax`, the
+    # ridges' rows and the quantile lines' as under `position = "identity"`. R's draws are not
+    # reproduced, so the points stand elsewhere in that band.
+    test "sets each point up its ridge by a share of its height there, and nothing else" do
+      identity = jittered(:identity)
+      frame = jittered(GigRidges.PointsSina)
+      shares = shares(frame)
+
+      assert Enum.all?(shares, &(&1 >= 0.02 and &1 <= 0.98))
+      assert length(Enum.uniq(shares)) == 13
+      assert points(frame, [:x, :y, :ymax]) == points(identity, [:x, :y, :ymax])
+
+      for type <- ["ridgeline", "vline"] do
+        columns = [:x, :y, :ymin, :ymax, :density]
+        assert typed(frame, type, columns) == typed(identity, type, columns)
+      end
+    end
+
+    # Each share `rel_min + (rel_max - rel_min) * u` for a draw `u` from Erlang's exsss from the
+    # seed, 0 unless given, one for each point, each panel drawing afresh, as the jitter draws its
+    # distances. Departure: ggridges 0.5.7 sets each share between 0.02 and `rel_max`, whatever
+    # `rel_min` it is given, `rel_min = 0.5, rel_max = 0.5` setting them 0.02 + 0.48u.
+    test "draws each share from rel_min to rel_max, from the seed, each panel afresh" do
+      {draws, _stream} =
+        Enum.map_reduce(1..13, :rand.seed_s(:exsss, 0), fn _draw, stream ->
+          :rand.uniform_s(stream)
+        end)
+
+      shares = jittered({GigRidges.PointsSina, rel_min: 0.25, rel_max: 0.75}) |> shares()
+      assert close_to?(shares, Enum.map(draws, &(0.25 + 0.5 * &1)))
+
+      halves = jittered({GigRidges.PointsSina, rel_min: 0.5, rel_max: 0.5}) |> shares()
+      assert close_to?(halves, List.duplicate(0.5, 13))
+
+      sina = {GigRidges.PointsSina, seed: 7}
+      assert shares(jittered(sina)) == shares(jittered(sina))
+      refute shares(jittered(sina)) == shares(jittered(GigRidges.PointsSina))
+
+      faceted =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, jittered_points: true, position: sina)
+        |> Plot.facet_wrap(:g)
+        |> Giggly.layer_data()
+        |> shares()
+
+      assert close_to?([Enum.at(faceted, 6)], [hd(faceted)])
+      refute close_to?([Enum.at(faceted, 1)], [hd(faceted)])
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: `geom_density_ridges()`, `geom_density_ridges2()`
+    # and `geom_density_ridges_gradient()` take `position_points_sina()` unless given another
+    # position, and `stat_density_ridges()` takes `position_identity()`.
+    test "sets the density ridges geoms' points up their ridges unless given another position" do
+      for function <- [
+            &GigRidges.geom_density_ridges/2,
+            &GigRidges.geom_density_ridges2/2,
+            &GigRidges.geom_density_ridges_gradient/2
+          ] do
+        frame =
+          @spread
+          |> Plot.new(%{x: :v, y: :g})
+          |> function.(bandwidth: 1, jittered_points: true)
+          |> Giggly.layer_data()
+
+        assert shares(frame) == shares(jittered(GigRidges.PointsSina))
+      end
+
+      stat =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_density_ridges(bandwidth: 1, jittered_points: true)
+        |> Giggly.layer_data()
+
+      assert shares(stat) == List.duplicate(0.0, 13)
+    end
+
+    # A point whose ridge has no height to share, as a missing mapped `scale` leaves one, is left
+    # with no `ymin`, as it is under `position = "identity"`, and drawn nowhere.
+    test "leaves a point with no height to share as it is" do
+      missing =
+        @spread
+        |> Map.put("s", List.duplicate(1, 6) ++ List.duplicate(nil, 7))
+        |> Plot.new(%{x: :v, y: :g, scale: :s})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, jittered_points: true)
+        |> Giggly.layer_data()
+
+      [ymin, group] = points(missing, [:ymin, :group])
+      assert for({low, 2} <- Enum.zip(ymin, group), do: low) == List.duplicate(nil, 7)
+      assert Enum.all?(for({low, 1} <- Enum.zip(ymin, group), do: low), &(&1 > 1))
+    end
+
+    test "leaves a layer with no points' rows, as a ridgeline's, as it is" do
+      ridgeline = fn position ->
+        @ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline(position: position)
+        |> Giggly.layer_data()
+      end
+
+      assert ridgeline.({GigRidges.PointsSina, rel_min: 0.5}) == ridgeline.(:identity)
+    end
+
+    test "refuses a share outside 0 to 1, a seed not whole, and a rel_min above its rel_max" do
+      for {option, value} <- [rel_min: -0.1, rel_max: 1.5, seed: 1.5] do
+        error =
+          assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+            jittered({GigRidges.PointsSina, [{option, value}]})
+          end
+
+        assert Exception.message(error) =~ inspect(value)
+      end
+
+      assert_raise ArgumentError, ~r/rel_min: 0.9 and rel_max: 0.1/, fn ->
+        jittered({GigRidges.PointsSina, rel_min: 0.9, rel_max: 0.1})
       end
     end
   end

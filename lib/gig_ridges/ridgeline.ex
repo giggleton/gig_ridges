@@ -7,7 +7,9 @@ defmodule GigRidges.Ridgeline do
   A point whose height is below `min_height` is left out of its ridge, which breaks there; with no
   `min_height`, a point below 0 is, and a point whose mapped `min_height` is missing is never cut
   off. The density ridges' geom (`GigRidges.DensityRidgeline`) cuts at `rel_min_height` times the
-  layer's greatest height, across every panel, in its place.
+  layer's greatest height, across every panel, in its place. A quantile line or jittered point, a
+  row whose `datatype` is `"vline"` or `"point"`, is never cut off, however low its ridge is cut,
+  as ggridges keeps them.
 
   `scale` and `min_height` are each an option and an aesthetic: given as an option, its value is
   every point's; else a mapped column gives each point its own; else its default, a `scale` of 1,
@@ -170,14 +172,9 @@ defmodule GigRidges.Ridgeline do
         DataFrame.pull(frame, columns.baseline),
         heights,
         each_point(ridgeline.scale, frame, :scale, ridgeline.unmapped_scale),
-        cut_offs(ridgeline, frame, greatest)
+        ridgeline |> cut_offs(frame, greatest) |> ridges_only(frame)
       ]
-      |> Enum.zip_with(fn [baseline, height, scale, least] ->
-        if Enum.all?([baseline, height, scale], &is_number/1) and
-             (is_nil(least) or height >= least),
-           do: {baseline, baseline + scale * height},
-           else: {nil, nil}
-      end)
+      |> Enum.zip_with(&range/1)
       |> Enum.unzip()
 
     ranged =
@@ -188,6 +185,15 @@ defmodule GigRidges.Ridgeline do
     %{ridge: ridges, others: others} = kinds(ranged)
     set_up = Geom.setup_data(ribbon(ridgeline), DataFrame.slice(ranged, ridges), axis_types)
     DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, others), set_up)])
+  end
+
+  # A point's range, from its baseline to `scale` times its height above it, none where any of
+  # them is missing or it falls below its cut-off.
+  defp range([baseline, height, scale, least]) do
+    if Enum.all?([baseline, height, scale], &is_number/1) and
+         (is_nil(least) or height >= least),
+       do: {baseline, baseline + scale * height},
+       else: {nil, nil}
   end
 
   # The rows by kind, by their indices: a ridge's own, the quantile lines up it the density ridges'
@@ -379,6 +385,23 @@ defmodule GigRidges.Ridgeline do
       share when is_number(share) -> share * greatest
       missing -> missing
     end)
+  end
+
+  # The cut-offs of the ridges' own rows, none for a quantile line's or a jittered point's, which
+  # ggridges draws however low its ridge is cut.
+  defp ridges_only(cut_offs, frame) do
+    case :datatype in DataFrame.names(frame) do
+      false ->
+        cut_offs
+
+      true ->
+        frame
+        |> DataFrame.pull(:datatype)
+        |> Enum.zip_with(cut_offs, fn
+          "ridgeline", least -> least
+          _other, _least -> nil
+        end)
+    end
   end
 
   defp cut_off_reason(:min_height), do: "it is the height below which a point is left out"

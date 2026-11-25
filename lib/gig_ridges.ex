@@ -119,7 +119,8 @@ defmodule GigRidges do
   read at; and `quantile_lines:`, `quantiles:` and `quantile_fun:`, a line up each ridge at each of
   its group's quantiles, or under `calc_ecdf:` each place's `ecdf` and band alone;
   `jittered_points:`, a point under each ridge at each of its group's values, drawn in the `point_*`
-  given and moved about its baseline by `position: {GigRidges.PointsJitter, ...}`; the lines drawn in the `vline_color:`, `vline_width:` and `vline_linetype:` given, over the
+  given, on its baseline unless the layer's position moves it, as `GigRidges.PointsSina` and
+  `GigRidges.PointsJitter` do; the lines drawn in the `vline_color:`, `vline_width:` and `vline_linetype:` given, over the
   ridge's own; and the density ridges' geom's (`GigRidges.DensityRidgeline`) beside Giggly's options
   for the marks: `scale:`, 1.8 unless given or mapped, so neighbouring ridges overlap;
   `panel_scaling:`, whether each panel's tallest ridge or the layer's reaches the next baseline; and
@@ -139,7 +140,10 @@ defmodule GigRidges do
   end
 
   @doc """
-  Adds the layer `stat_density_ridges/3` adds, from the same mapping and options.
+  Adds the layer `stat_density_ridges/3` adds, from the same mapping and options, but its points
+  under `jittered_points:` set up their ridges at random (`GigRidges.PointsSina`) unless another
+  `position:` is given, as ggridges' `geom_density_ridges()` takes `position_points_sina()`,
+  where the stat's stay on their baselines.
   """
   @spec geom_density_ridges(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
   def geom_density_ridges(plot, mapping_or_options \\ %{}, options \\ [])
@@ -149,7 +153,7 @@ defmodule GigRidges do
 
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
-    density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
+    density_layer(plot, mapping, sina(options), "GigRidges.geom_density_ridges/3")
   end
 
   @doc """
@@ -168,7 +172,7 @@ defmodule GigRidges do
   def geom_density_ridges_gradient(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     components = {GigRidges.DensityRidges, GigRidges.DensityRidgelineGradient}
-    layer(plot, mapping, options, components, "GigRidges.geom_density_ridges_gradient/3")
+    layer(plot, mapping, sina(options), components, "GigRidges.geom_density_ridges_gradient/3")
   end
 
   @doc """
@@ -234,7 +238,7 @@ defmodule GigRidges do
   def geom_density_ridges2(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     components = {GigRidges.DensityRidges, GigRidges.DensityRidgeline2}
-    layer(plot, mapping, options, components, "GigRidges.geom_density_ridges2/3")
+    layer(plot, mapping, sina(options), components, "GigRidges.geom_density_ridges2/3")
   end
 
   # A layer of density ridges, drawn by the density ridges' geom, 1.8 times their height unless
@@ -243,6 +247,10 @@ defmodule GigRidges do
     components = {GigRidges.DensityRidges, GigRidges.DensityRidgeline}
     layer(plot, mapping, options, components, function)
   end
+
+  # A density ridges geom's options, its points set up their ridges at random unless another
+  # position is given.
+  defp sina(options), do: Keyword.put_new(options, :position, GigRidges.PointsSina)
 
   defp layer(plot, mapping, options, {stat, geom}, function),
     do: Plot.layer(plot, mapping, [stat: stat, geom: geom, function: function] ++ options)

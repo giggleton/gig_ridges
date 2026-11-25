@@ -22,6 +22,7 @@ defmodule GigRidges.PointsJitter do
   use Giggly.Position
 
   alias Giggly.DataFrame
+  alias GigRidges.Draws
 
   defstruct width: 0.0, height: 0.2, yoffset: 0.0, adjust_vlines: false, seed: 0
 
@@ -32,8 +33,6 @@ defmodule GigRidges.PointsJitter do
           adjust_vlines: boolean(),
           seed: integer()
         }
-
-  @algorithm :exsss
 
   @impl Giggly.Position
   def options do
@@ -89,31 +88,23 @@ defmodule GigRidges.PointsJitter do
     end
   end
 
-  # Each point moved across and up from its baseline, its own two draws from its panel's stream.
+  # Each point moved across and up from its baseline by its own two draws, across and then up.
   defp jittered(frame, jitter) do
-    types = DataFrame.pull(frame, :datatype)
-    panels = DataFrame.pull(frame, :panel)
-    xs = DataFrame.pull(frame, :x)
-    ys = DataFrame.pull(frame, :y)
-    lows = DataFrame.pull(frame, :ymin)
+    {xs, lows} =
+      [
+        Draws.points(frame, jitter.seed, 2),
+        DataFrame.pull(frame, :x),
+        DataFrame.pull(frame, :y),
+        DataFrame.pull(frame, :ymin)
+      ]
+      |> Enum.zip_with(fn
+        [[across, up], x, y, _low] ->
+          {x + distance(across, jitter.width), y + jitter.yoffset + distance(up, jitter.height)}
 
-    {moved, _streams} =
-      [types, panels, xs, ys, lows]
-      |> Enum.zip()
-      |> Enum.map_reduce(%{}, fn
-        {"point", panel, x, y, _low}, streams ->
-          stream = Map.get_lazy(streams, panel, fn -> :rand.seed_s(@algorithm, jitter.seed) end)
-          {across, stream} = :rand.uniform_s(stream)
-          {up, stream} = :rand.uniform_s(stream)
-          dx = distance(across, jitter.width)
-          dy = jitter.yoffset + distance(up, jitter.height)
-          {{x + dx, y + dy}, Map.put(streams, panel, stream)}
-
-        {_type, _panel, x, _y, low}, streams ->
-          {{x, low}, streams}
+        [nil, x, _y, low] ->
+          {x, low}
       end)
-
-    {xs, lows} = Enum.unzip(moved)
+      |> Enum.unzip()
 
     frame
     |> DataFrame.put(:x, xs)
