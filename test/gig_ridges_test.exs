@@ -111,6 +111,28 @@ defmodule GigRidgesTest do
         Giggly.layer_data(unheighted)
       end
     end
+
+    test "leaves out a point with no height, and one below 0 where no cut-off is given" do
+      ymax =
+        %{"x" => [1, 2, 3, 4], "y" => [0, 0, 0, 0], "h" => [0.2, nil, -0.1, 0.4]}
+        |> Plot.new(%{x: :x, y: :y, height: :h})
+        |> GigRidges.geom_ridgeline()
+        |> Giggly.layer_data()
+        |> DataFrame.pull(:ymax)
+
+      assert ymax == [0.2, nil, nil, 0.4]
+    end
+
+    test "refuses a height mapped to a column of text, naming the aesthetic" do
+      unnumbered =
+        %{"x" => [1, 2], "y" => [0, 0], "h" => ["a", "b"]}
+        |> Plot.new(%{x: :x, y: :y, height: :h})
+        |> GigRidges.geom_ridgeline()
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_ridgeline\/3 maps :height to "h"/, fn ->
+        Giggly.layer_data(unnumbered)
+      end
+    end
   end
 
   describe "geom_density_ridges/3" do
@@ -288,6 +310,119 @@ defmodule GigRidgesTest do
       assert_raise NimbleOptions.ValidationError, ~r/expected a number above 0 or :nrd0/, fn ->
         GigRidges.geom_density_ridges(plot, bandwidth: -1)
       end
+    end
+
+    test "takes the ridgeline's options as given, every ridge's", %{plot: plot} do
+      frame =
+        plot
+        |> GigRidges.geom_density_ridges(scale: 1, rel_min_height: 0.5)
+        |> Giggly.layer_data()
+
+      reaches =
+        frame
+        |> DataFrame.pull(:ymax)
+        |> Enum.zip_with(DataFrame.pull(frame, :ymin), fn
+          nil, _low -> nil
+          high, low -> high - low
+        end)
+
+      kept = Enum.filter(reaches, &is_number/1)
+
+      # At a scale of 1 the panel's greatest density reaches the next baseline, 1 above; a point
+      # below half of it is left out.
+      assert Float.round(Enum.max(kept), 12) == 1.0
+      assert Enum.min(kept) >= 0.5
+      assert length(kept) < length(reaches)
+    end
+
+    test "gives each density as a share of its group's greatest, its ndensity", %{plot: plot} do
+      frame = plot |> GigRidges.geom_density_ridges() |> Giggly.layer_data()
+
+      shares =
+        frame
+        |> DataFrame.split(:group)
+        |> Enum.map(fn {_group, rows} ->
+          densities = DataFrame.pull(rows, :density)
+          peak = Enum.max(densities)
+          DataFrame.pull(rows, :ndensity) == Enum.map(densities, fn density -> density / peak end)
+        end)
+
+      assert shares == List.duplicate(true, 7)
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `layer_data()` of `geom_density_ridges()` over x 1, 2,
+    # 4, 7 in group a, 20, 21, 22 in b and 50 in c: c, of one value, is left out and adds nothing to
+    # the joint bandwidth, but its value counts towards the places, which run from -2.09927399669
+    # to 53.0992739967; a's greatest density is 0.17729721223.
+    test "leaves a group of one value out of the joint bandwidth" do
+      frame =
+        %{"x" => [1, 2, 4, 7, 20, 21, 22, 50], "g" => ~w(a a a a b b b c)}
+        |> Plot.new(%{x: :x, y: :g})
+        |> GigRidges.geom_density_ridges()
+        |> Giggly.layer_data()
+
+      {_group, first} =
+        frame
+        |> DataFrame.split(:group)
+        |> Enum.find(fn {_group, rows} -> rows |> DataFrame.pull(:y) |> hd() == 1 end)
+
+      places = DataFrame.pull(frame, :x)
+
+      assert map_size(DataFrame.split(frame, :group)) == 2
+      assert_in_delta Enum.max(DataFrame.pull(first, :density)), 0.17729721223, 1.0e-11
+      assert_in_delta Enum.min(places), -2.09927399669, 1.0e-10
+      assert_in_delta Enum.max(places), 53.0992739967, 1.0e-9
+    end
+
+    test "draws no ridge where every group has fewer than three values" do
+      frame =
+        %{"x" => [1, 2, 5, 6], "g" => ["a", "a", "b", "b"]}
+        |> Plot.new(%{x: :x, y: :g})
+        |> GigRidges.geom_density_ridges()
+        |> Giggly.layer_data()
+
+      assert DataFrame.row_count(frame) == 0
+    end
+
+    test "names the function called in its refusals", %{plot: plot} do
+      assert_raise ArgumentError, ~r/^GigRidges.geom_density_ridges\/3 sets :shape/, fn ->
+        GigRidges.geom_density_ridges(plot, shape: 1)
+      end
+
+      assert_raise ArgumentError, ~r/^GigRidges.stat_density_ridges\/3 sets :shape/, fn ->
+        GigRidges.stat_density_ridges(plot, shape: 1)
+      end
+
+      assert_raise ArgumentError,
+                   ~r/^GigRidges.geom_density_ridges\/3 maps :scale to "model"/,
+                   fn ->
+                     plot
+                     |> Plot.aes(%{scale: :model})
+                     |> GigRidges.geom_density_ridges()
+                     |> Giggly.layer_data()
+                   end
+    end
+
+    test "needs a height under a stat that writes none" do
+      unheighted =
+        %{"x" => [1, 2], "y" => [0, 0]}
+        |> Plot.new(%{x: :x, y: :y})
+        |> Plot.layer(%{}, stat: :identity, geom: GigRidges.DensityRidgeline)
+
+      assert_raise ArgumentError, ~r/needs :height/, fn -> Giggly.layer_data(unheighted) end
+    end
+
+    test "draws each class's legend key filled as its ridge is, outlined in black", %{plot: plot} do
+      svg =
+        plot
+        |> Plot.aes(%{fill: :class})
+        |> GigRidges.geom_density_ridges()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+
+      keys = Regex.scan(~r/<rect [^>]*stroke: #000000;[^>]*fill: (#[0-9A-F]{6})/, svg)
+
+      assert length(Enum.uniq_by(keys, fn [_rect, fill] -> fill end)) == 7
     end
 
     test "draws through Giggly as any layer does", %{plot: plot} do
