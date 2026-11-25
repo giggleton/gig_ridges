@@ -29,13 +29,15 @@ defmodule GigRidges.Ridgeline do
   # 1 here and 1.8 there. The cut-off it is not cut by is ignored, mapped or not, as ggridges'
   # ridgeline ignores `rel_min_height` and its density ridges `min_height`. `iscaled` is whether
   # each point's height is first multiplied by its `iscale` column, which the density ridges' geom
-  # writes, so the tallest reaches the next baseline.
+  # writes, so the tallest reaches the next baseline. `outline` is the ribbon's outline type, the
+  # top alone here and the whole border under the closed density ridges' geom.
   defstruct scale: :none,
             min_height: :none,
             rel_min_height: :none,
             cut_off: :min_height,
             unmapped_scale: 1.0,
-            iscaled: false
+            iscaled: false,
+            outline: :upper
 
   @type t :: %__MODULE__{
           scale: :none | float(),
@@ -43,7 +45,8 @@ defmodule GigRidges.Ridgeline do
           rel_min_height: :none | float(),
           cut_off: :min_height | :rel_min_height,
           unmapped_scale: float(),
-          iscaled: boolean()
+          iscaled: boolean(),
+          outline: :upper | :full
         }
 
   @impl Giggly.Geom
@@ -113,8 +116,9 @@ defmodule GigRidges.Ridgeline do
   # colour replace them, as they do every Giggly geom's (`Giggly.Geom.default_aesthetics/2`) and
   # ggplot2's own geoms': a departure from ggridges 0.5.7, which keeps grey70 and black.
   @impl Giggly.Geom
-  def default_aesthetics(_ridgeline, element) do
-    ribbon()
+  def default_aesthetics(ridgeline, element) do
+    ridgeline
+    |> ribbon()
     |> Geom.default_aesthetics(element)
     |> Keyword.merge(fill: "#B3B3B3", color: "#000000", linewidth: 0.5)
   end
@@ -144,24 +148,24 @@ defmodule GigRidges.Ridgeline do
       |> DataFrame.put(:ymin, lows)
       |> DataFrame.put(:ymax, highs)
 
-    Geom.setup_data(ribbon(), ranged, axis_types)
+    Geom.setup_data(ribbon(ridgeline), ranged, axis_types)
   end
 
   # Each ridge drawn by the ribbon, the highest baseline first, so a lower ridge is drawn over
   # the one above it.
   @impl Giggly.Geom
-  def draw_panel(_ridgeline, frame, context) do
+  def draw_panel(ridgeline, frame, context) do
     frame
     |> DataFrame.split(:group)
     |> Map.values()
     |> Enum.sort_by(&baseline/1, :desc)
-    |> Enum.flat_map(fn ridge -> Geom.draw_panel(ribbon(), ridge, context) end)
+    |> Enum.flat_map(fn ridge -> Geom.draw_panel(ribbon(ridgeline), ridge, context) end)
   end
 
   @impl Giggly.Geom
-  def draw_key(_ridgeline, key, context), do: Geom.draw_key(ribbon(), key, context)
+  def draw_key(ridgeline, key, context), do: Geom.draw_key(ribbon(ridgeline), key, context)
   @impl Giggly.Geom
-  def key_size(_ridgeline, key, context), do: Geom.key_size(ribbon(), key, context)
+  def key_size(ridgeline, key, context), do: Geom.key_size(ribbon(ridgeline), key, context)
 
   # Each point's height, times its `iscale` under the density ridges' geom; missing where either
   # is.
@@ -223,6 +227,8 @@ defmodule GigRidges.Ridgeline do
     |> Enum.min(fn -> :neg_infinity end)
   end
 
-  # The ribbon a ridge is set up and drawn by: along x, outlined along its top alone.
-  defp ribbon, do: Geom.new(Geom.Ribbon, orientation: :x, outline_type: :upper, linejoin: :round)
+  # The ribbon a ridge is set up and drawn by: along x, outlined along its top alone, or round its
+  # whole border under the closed density ridges' geom.
+  defp ribbon(%__MODULE__{outline: outline}),
+    do: Geom.new(Geom.Ribbon, orientation: :x, outline_type: outline, linejoin: :round)
 end

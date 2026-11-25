@@ -980,6 +980,58 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "geom_density_ridges2/3" do
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges2(bandwidth = 1)` over groups a
+    # and b of @spread: each ridge one polygon of 1024 points, its 512 places along its top and
+    # back along its baseline, filled grey70 and outlined black 0.5 mm wide round its whole
+    # border, with no line apart, where `geom_density_ridges()` draws a polygon unoutlined and its
+    # top a line; its rows, defaults and legend keys those of `geom_density_ridges()`.
+    test "draws each ridge as one polygon outlined round its whole border" do
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+      closed = GigRidges.geom_density_ridges2(plot, bandwidth: 1)
+
+      polygons =
+        closed
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<(polygon|polyline) points=.([^"']*)["'] style=.([^"']*)/, &1))
+
+      assert [[_, "polygon", first, style], [_, "polygon", second, style]] = polygons
+      assert Enum.map([first, second], &length(String.split(&1, " ", trim: true))) == [1024, 1024]
+      assert style =~ "stroke-width: 1.07; stroke: #000000"
+      assert style =~ "fill: #B3B3B3"
+
+      open = GigRidges.geom_density_ridges(plot, bandwidth: 1)
+
+      for column <- [:x, :ymin, :ymax, :fill, :color, :linewidth] do
+        assert DataFrame.pull(Giggly.layer_data(closed), column) ==
+                 DataFrame.pull(Giggly.layer_data(open), column)
+      end
+    end
+
+    test "takes the density ridges' options and names itself in its refusals" do
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+
+      frame =
+        plot
+        |> GigRidges.geom_density_ridges2(%{}, bandwidth: 1, scale: 1, panel_scaling: false)
+        |> Giggly.layer_data()
+
+      reach =
+        frame
+        |> DataFrame.pull(:ymax)
+        |> Enum.zip_with(DataFrame.pull(frame, :ymin), &(&1 - &2))
+        |> Enum.max()
+
+      assert Float.round(reach, 9) == 1.0
+
+      assert_raise ArgumentError, ~r/^GigRidges.geom_density_ridges2\/3 sets :shape/, fn ->
+        GigRidges.geom_density_ridges2(plot, shape: 1)
+      end
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame

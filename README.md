@@ -36,6 +36,8 @@ GigDatasets.mpg()
   density along `x` with one bandwidth each panel's groups share, and draw it so the panel's
   greatest density reaches the next baseline at a `scale:` of 1; their `scale:` is 1.8 unless
   given or mapped, so neighbouring ridges overlap.
+- `GigRidges.geom_density_ridges2/3` draws the same ridges, each outlined round its whole border,
+  its baseline too, not along its top alone.
 
 Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`,
 `linetype:`, `position:`) beside its own: `scale:` for the ridges, with `min_height:` for the

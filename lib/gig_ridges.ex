@@ -3,7 +3,8 @@ defmodule GigRidges do
   Ridgeline plots for Giggly: ridges along `x`, one above each baseline, as joy plots draw them.
 
   `geom_ridgeline/3` draws ridges of the heights a table gives; `stat_density_ridges/3` and
-  `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge. Each
+  `geom_density_ridges/3` estimate each group's density along `x` and draw it as a ridge, and
+  `geom_density_ridges2/3` draws it outlined round its whole border. Each
   adds a layer to a `Giggly.Plot`, through `Giggly.Plot.layer/3`, so it takes Giggly's own options
   for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`, `linetype:`, `position:`) beside its
   own, and its mistakes are refused naming it.
@@ -87,6 +88,23 @@ defmodule GigRidges do
   def geom_density_ridges(%Plot{} = plot, mapping, options)
       when is_map(mapping) and is_list(options) do
     density_layer(plot, mapping, options, "GigRidges.geom_density_ridges/3")
+  end
+
+  @doc """
+  Adds the layer `geom_density_ridges/3` adds, from the same mapping and options, but each ridge
+  outlined round its whole border, its baseline and sides too, not along its top alone
+  (`GigRidges.DensityRidgeline2`).
+  """
+  @spec geom_density_ridges2(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
+  def geom_density_ridges2(plot, mapping_or_options \\ %{}, options \\ [])
+
+  def geom_density_ridges2(%Plot{} = plot, options, []) when is_list(options),
+    do: geom_density_ridges2(plot, %{}, options)
+
+  def geom_density_ridges2(%Plot{} = plot, mapping, options)
+      when is_map(mapping) and is_list(options) do
+    components = {GigRidges.DensityRidges, GigRidges.DensityRidgeline2}
+    layer(plot, mapping, options, components, "GigRidges.geom_density_ridges2/3")
   end
 
   # A layer of density ridges, drawn by the density ridges' geom, 1.8 times their height unless
