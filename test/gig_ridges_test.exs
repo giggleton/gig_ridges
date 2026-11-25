@@ -410,7 +410,8 @@ defmodule GigRidgesTest do
     # to = 5, n = 7)` over a tight group a (x -1, -0.5, 0, 0, 0.5, 1) and a wide group b (x -9, -6,
     # -3, 0, 3, 6, 9): seven places from -5 to 5, each density R's `density(x, bw = 1, from = -5,
     # to = 5, n = 7)`; and at `n = 1000`, past the 512 its grid starts from, a's 500th place reads
-    # 0.3309387554618286; moved by the estimate, never by Giggly.
+    # 0.3309387554618286; and at `n = 2`, the least taken, b reads 6.3591540636271239e-4 at both
+    # -12 and 12; moved by the estimate, never by Giggly.
     test "reads each density at n places from from to to" do
       frame =
         @spread
@@ -443,6 +444,16 @@ defmodule GigRidgesTest do
 
       assert length(many) == 1000
       assert abs(Enum.at(many, 499) - 0.3309387554618286) < 1.0e-12
+
+      [_a, [ends, two]] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_density_ridges(bandwidth: 1, n: 2)
+        |> Giggly.layer_data()
+        |> by_group([:x, :density])
+
+      assert ends == [-12.0, 12.0]
+      assert Enum.all?(two, &(abs(&1 - 6.3591540636271239e-4) < 1.0e-12))
     end
 
     # Golden: ggridges 0.5.7 on ggplot2 4.0.3, over groups a and b above at `bandwidth = 1`:
@@ -450,7 +461,7 @@ defmodule GigRidgesTest do
     # and `to = 5` alone from -12; `from = 8, to = 12, n = 3` reads b at 0.042282525236001067,
     # 0.034586405217207537 and 0.000633539421405289, its values past four bandwidths below 8 adding
     # nothing, and a, every value of it there, at 0; and `from = 20` alone, above where `to` falls,
-    # fails its computation and draws no ridge.
+    # fails its computation and draws no ridge, as does `from = 12` alone, just where `to` falls.
     test "takes either end alone, and reads no ridge where the places would run backwards" do
       read = fn options, columns ->
         @spread
@@ -470,6 +481,7 @@ defmodule GigRidgesTest do
       assert Enum.all?(Enum.zip_with(b, golden, &abs(&1 - &2)), &(&1 < 1.0e-12))
 
       assert read.([from: 20], [:x]) == []
+      assert read.([from: 12], [:x]) == []
     end
 
     test "refuses a from not below its to, and n below 2 or not whole, naming the function" do
@@ -546,8 +558,8 @@ defmodule GigRidgesTest do
       assert kept.(faceted) == [182, 0]
     end
 
-    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b of the test above on baselines 0 and 3,
-    # `geom_density_ridges(aes(group = y), bandwidth = 1, rel_min_height = 0.5)`: a keeps 60 of
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b of the test above on baselines 0 and
+    # 3, `geom_density_ridges(aes(group = y), bandwidth = 1, rel_min_height = 0.5)`: a keeps 60 of
     # its 512 places and b none, as 1 apart, the cut-off a share of the greatest height whatever
     # the ridges' spacing; and `aes(rel_min_height = r)`, r 0.5 for a and NA for b, mapped in the
     # layer's own mapping, keeps 60 of a's and every one of b's.
