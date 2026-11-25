@@ -26,7 +26,7 @@ defmodule GigRidges.Cyclical do
       |> breaks()
       |> Keyword.put(:values, repeated(values, Keyword.get(options, :limits)))
 
-    Plot.scale_discrete_manual(plot, spelled(aesthetics), manual)
+    Plot.scale_discrete_manual(plot, aesthetics, manual)
   end
 
   defp check_values([_value | _rest], _function), do: :ok
@@ -43,29 +43,11 @@ defmodule GigRidges.Cyclical do
     values |> Stream.cycle() |> Enum.take(count)
   end
 
-  # A list of breaks, or of `{value, label}` pairs, as a function returning its values, a pair's
-  # label its value's unless `labels:` gives the labels.
+  # A list of breaks, values or `{value, label}` pairs, as a function returning it.
   defp breaks(options) do
     case Keyword.get(options, :breaks) do
-      breaks when is_list(breaks) ->
-        {values, labels} = Enum.map_reduce(breaks, %{}, &labelled/2)
-
-        options
-        |> Keyword.put(:breaks, fn _limits -> values end)
-        |> labels(labels)
-
-      _other ->
-        options
+      breaks when is_list(breaks) -> Keyword.put(options, :breaks, fn _limits -> breaks end)
+      _other -> options
     end
   end
-
-  defp labelled({value, label}, labels), do: {value, Map.put(labels, value, label)}
-  defp labelled(value, labels), do: {value, labels}
-
-  defp labels(options, labels) when map_size(labels) == 0, do: options
-  defp labels(options, labels), do: Keyword.put_new(options, :labels, labels)
-
-  defp spelled(aesthetics) when is_list(aesthetics), do: Enum.map(aesthetics, &spelled/1)
-  defp spelled(:colour), do: :color
-  defp spelled(aesthetic), do: aesthetic
 end

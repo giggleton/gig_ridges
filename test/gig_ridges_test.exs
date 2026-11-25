@@ -3062,19 +3062,19 @@ defmodule GigRidgesTest do
     # Its values are repeated to a thousand, or to as many as the limits given, so a scale showing
     # more refuses the plot, as a manual scale given too few values does.
     test "serves a thousand values, or as many as its limits" do
-      levels = Enum.map(1..1001, &"v#{&1}")
-
-      points = fn options ->
-        %{"x" => Enum.to_list(1..1001), "y" => Enum.to_list(1..1001), "c" => levels}
-        |> Plot.new(%{x: :x, y: :y, colour: :c})
+      points = fn count, options ->
+        %{"x" => Enum.to_list(1..count), "c" => Enum.map(1..count, &"v#{&1}")}
+        |> Plot.new(%{x: :x, y: :x, colour: :c})
         |> Plot.geom_point()
         |> GigRidges.scale_colour_cyclical([values: ["red", "blue"]] ++ options)
       end
 
-      assert_raise ArgumentError, ~r/1001/, fn -> Giggly.layer_data(points.([])) end
+      colours = points.(1000, []) |> Giggly.layer_data() |> DataFrame.pull(:color)
+      assert colours |> Enum.uniq() |> Enum.sort() == [@blue, @red]
+      assert_raise ArgumentError, ~r/1001/, fn -> Giggly.layer_data(points.(1001, [])) end
 
-      colours = points.(limits: levels) |> Giggly.layer_data() |> DataFrame.pull(:color)
-      assert length(colours) == 1001
+      limits = Enum.map(1..1001, &"v#{&1}")
+      colours = points.(1001, limits: limits) |> Giggly.layer_data() |> DataFrame.pull(:color)
       assert colours |> Enum.uniq() |> Enum.sort() == [@blue, @red]
     end
 
@@ -3084,6 +3084,20 @@ defmodule GigRidgesTest do
       for values <- [nil, [], %{"a" => "red"}] do
         assert_raise ArgumentError, ~r/GigRidges.scale_fill_cyclical\/2 takes values:/, fn ->
           five(%{fill: :g}, &GigRidges.scale_fill_cyclical(&1, values: values))
+        end
+      end
+
+      for {name, scale} <- [
+            {"cyclical_scale/3", &GigRidges.cyclical_scale(&1, :fill, values: [])},
+            {"scale_colour_cyclical/2", &GigRidges.scale_colour_cyclical(&1, values: [])},
+            {"scale_color_cyclical/2", &GigRidges.scale_color_cyclical(&1, values: [])},
+            {"scale_alpha_cyclical/2", &GigRidges.scale_alpha_cyclical(&1, values: [])},
+            {"scale_linetype_cyclical/2", &GigRidges.scale_linetype_cyclical(&1, values: [])},
+            {"scale_linewidth_cyclical/2", &GigRidges.scale_linewidth_cyclical(&1, values: [])},
+            {"scale_size_cyclical/2", &GigRidges.scale_size_cyclical(&1, values: [])}
+          ] do
+        assert_raise ArgumentError, ~r/^GigRidges.#{Regex.escape(name)} takes values:/, fn ->
+          five(%{}, scale)
         end
       end
     end
