@@ -22,13 +22,17 @@ defmodule GigRidges.Ridgeline do
   ridges' stat writes, are kept from the ribbon and drawn as lines from each ridge's baseline up
   to it, between its fill and its top line, in the ridge's colour, line width and line type, or in
   the `vline_color:` (or `vline_colour:`), `vline_width:` and `vline_linetype:` given, each over
-  the ridge's own, as ggridges' `vline_*` set them.
+  the ridge's own, as ggridges' `vline_*` set them. Rows whose `datatype` is `"point"`, the
+  jittered points, are kept from the ribbon too and drawn after the ridge and its lines, each at
+  its value and its `ymin`, as R's shape 19 1.5 mm across and outlined 0.5 mm, in the ridge's
+  colour, fill and alpha, or the `point_shape:`, `point_size:`, `point_stroke:`, `point_color:` (or
+  `point_colour:`), `point_fill:` and `point_alpha:` given, each over the ridge's.
   """
 
   use Giggly.Geom
 
   alias Giggly.{DataFrame, Geom}
-  alias GigRidges.{Gradient, LineStyle}
+  alias GigRidges.{Gradient, LineStyle, PointStyle}
 
   # Points, 1/72 inch, in a millimetre, as key sizes are given.
   @points_per_millimetre 72 / 25.4
@@ -47,19 +51,18 @@ defmodule GigRidges.Ridgeline do
   # off by `min_width`, which `min_height` holds then. `gradient` is `:none`, or, under the gradient
   # ridgelines' geoms, the width in millimetres of the outline round each piece of one fill that a
   # ridge whose fill varies is drawn in (`GigRidges.Gradient`).
-  defstruct scale: :none,
-            min_height: :none,
-            rel_min_height: :none,
-            cut_off: :min_height,
-            unmapped_scale: 1.0,
-            iscaled: false,
-            outline: :upper,
-            along: :x,
-            gradient: :none,
-            vline_color: :unset,
-            vline_colour: :unset,
-            vline_width: :unset,
-            vline_linetype: :unset
+  defstruct [
+              scale: :none,
+              min_height: :none,
+              rel_min_height: :none,
+              cut_off: :min_height,
+              unmapped_scale: 1.0,
+              iscaled: false,
+              outline: :upper,
+              along: :x,
+              gradient: :none
+            ] ++
+              GigRidges.LineStyle.vline_fields() ++ GigRidges.PointStyle.point_fields()
 
   @type t :: %__MODULE__{
           scale: :none | float(),
@@ -70,11 +73,7 @@ defmodule GigRidges.Ridgeline do
           iscaled: boolean(),
           outline: :upper | :full,
           along: :x | :y,
-          gradient: :none | float(),
-          vline_color: :unset | String.t() | :none,
-          vline_colour: :unset | String.t() | :none,
-          vline_width: :unset | float(),
-          vline_linetype: :unset | tuple() | :none
+          gradient: :none | float()
         }
 
   @impl Giggly.Geom
@@ -94,12 +93,15 @@ defmodule GigRidges.Ridgeline do
           "The height below which a point is left out of its ridge, every point's, over a " <>
             "mapped `min_height`; 0 where neither gives one."
       ]
-    ] ++ LineStyle.vline_options()
+    ] ++ LineStyle.vline_options() ++ GigRidges.PointStyle.point_options()
   end
 
-  # `vline_color:` and `vline_colour:` given at once.
+  # `vline_color:` beside `vline_colour:`, or `point_color:` beside `point_colour:`.
   @impl Giggly.Geom
-  def option_conflicts(options), do: LineStyle.vline_conflicts(options)
+  def option_conflicts(options),
+    do:
+      GigRidges.LineStyle.vline_conflicts(options) ++
+        GigRidges.PointStyle.point_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(%__MODULE__{cut_off: cut_off, along: along}),
@@ -183,25 +185,32 @@ defmodule GigRidges.Ridgeline do
       |> DataFrame.put(columns.low, lows)
       |> DataFrame.put(columns.high, highs)
 
-    {ridges, lines} = line_rows(ranged)
+    %{ridge: ridges, others: others} = kinds(ranged)
     set_up = Geom.setup_data(ribbon(ridgeline), DataFrame.slice(ranged, ridges), axis_types)
-    DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, lines), set_up)])
+    DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, others), set_up)])
   end
 
-  # Which of the rows are a ridge's points and which the quantile lines up it the density ridges'
-  # stat writes, whose `datatype` is `"vline"`, by their indices.
-  defp line_rows(frame) do
+  # The rows by kind, by their indices: a ridge's own, the quantile lines up it the density ridges'
+  # stat writes, whose `datatype` is `"vline"`, its jittered points, `"point"`, and those two
+  # together, the rows kept from the ribbon.
+  defp kinds(frame) do
     types =
       if :datatype in DataFrame.names(frame),
         do: DataFrame.pull(frame, :datatype),
         else: List.duplicate("ridgeline", DataFrame.row_count(frame))
 
-    {lines, ridges} =
-      types
-      |> Enum.with_index()
-      |> Enum.split_with(fn {type, _index} -> type == "vline" end)
+    indexed = Enum.with_index(types)
+    of = fn kind -> for {^kind, index} <- indexed, do: index end
+    lines = of.("vline")
+    points = of.("point")
+    others = Enum.sort(lines ++ points)
 
-    {Enum.map(ridges, &elem(&1, 1)), Enum.map(lines, &elem(&1, 1))}
+    %{
+      ridge: Enum.to_list(0..(length(types) - 1)//1) -- others,
+      lines: lines,
+      points: points,
+      others: others
+    }
   end
 
   # The line rows beside the ridges' set up, with each column the ridges' setup added, its first
@@ -250,17 +259,36 @@ defmodule GigRidges.Ridgeline do
   # them; or, outlined round under the closed density ridges' geom, its outlined fill, then its
   # lines, as ggridges draws them.
   defp draw_ridge(ridgeline, ridge, context) do
-    case line_rows(ridge) do
-      {_points, []} ->
-        body(ridgeline, ridge, context)
+    %{ridge: own, lines: lines, points: points} = kinds(ridge)
+    body = DataFrame.slice(ridge, own)
 
-      {points, lines} ->
-        lined(
-          ridgeline,
-          DataFrame.slice(ridge, points),
-          quantile_lines(ridgeline, ridge, lines),
-          context
-        )
+    drawn =
+      case lines do
+        [] -> body(ridgeline, body, context)
+        lines -> lined(ridgeline, body, quantile_lines(ridgeline, ridge, lines), context)
+      end
+
+    drawn ++ jittered_points(ridgeline, DataFrame.slice(ridge, points), context)
+  end
+
+  # A ridge's jittered points, each at its value and its height, its `ymin`, the layer's position
+  # puts it at, drawn after the ridge and its lines in the points' style over the ridge's.
+  defp jittered_points(ridgeline, points, context) do
+    case DataFrame.row_count(points) do
+      0 ->
+        []
+
+      count ->
+        styled =
+          ridgeline
+          |> Map.from_struct()
+          |> PointStyle.point_style()
+          |> Enum.reduce(points, fn {column, value}, styled ->
+            DataFrame.put(styled, column, List.duplicate(value, count))
+          end)
+          |> then(&DataFrame.put(&1, :y, DataFrame.pull(&1, :ymin)))
+
+        Geom.draw_panel(Geom.new(Geom.Point, []), styled, context)
     end
   end
 

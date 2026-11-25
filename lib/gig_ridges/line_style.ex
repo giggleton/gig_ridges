@@ -81,6 +81,12 @@ defmodule GigRidges.LineStyle do
        "15, such as {4, 4}, got: #{inspect(line_type)}"}
   end
 
+  # The struct fields the quantile lines' options take, each `:unset` until given.
+  @doc false
+  @spec vline_fields() :: keyword()
+  def vline_fields,
+    do: [vline_color: :unset, vline_colour: :unset, vline_width: :unset, vline_linetype: :unset]
+
   # The options setting the quantile lines' style over the ridge's, as ggridges'
   # `vline_colour`, `vline_width` and `vline_linetype` set it: each `:unset`, the ridge's own,
   # unless given. `vline_colour:` is `vline_color:` spelled as R spells it, as Giggly takes

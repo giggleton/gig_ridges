@@ -30,26 +30,21 @@ defmodule GigRidges.DensityRidgeline do
   # border under the closed density ridges' geom (`GigRidges.DensityRidgeline2`); and `:none`, or
   # the width of the pieces' outlines under the gradient density ridges' geom
   # (`GigRidges.DensityRidgelineGradient`), each geom building the struct itself.
-  defstruct scale: :none,
-            rel_min_height: :none,
-            panel_scaling: true,
-            outline: :upper,
-            gradient: :none,
-            vline_color: :unset,
-            vline_colour: :unset,
-            vline_width: :unset,
-            vline_linetype: :unset
+  defstruct [
+              scale: :none,
+              rel_min_height: :none,
+              panel_scaling: true,
+              outline: :upper,
+              gradient: :none
+            ] ++
+              GigRidges.LineStyle.vline_fields() ++ GigRidges.PointStyle.point_fields()
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           rel_min_height: :none | float(),
           panel_scaling: boolean(),
           outline: :upper | :full,
-          gradient: :none | float(),
-          vline_color: :unset | String.t() | :none,
-          vline_colour: :unset | String.t() | :none,
-          vline_width: :unset | float(),
-          vline_linetype: :unset | tuple() | :none
+          gradient: :none | float()
         }
 
   @unmapped_scale 1.8
@@ -80,12 +75,15 @@ defmodule GigRidges.DensityRidgeline do
             "baseline (`true`), or the layer's ridges together, so a panel of lower heights " <>
             "draws lower ridges (`false`)."
       ]
-    ] ++ LineStyle.vline_options()
+    ] ++ LineStyle.vline_options() ++ GigRidges.PointStyle.point_options()
   end
 
-  # `vline_color:` and `vline_colour:` given at once.
+  # `vline_color:` beside `vline_colour:`, or `point_color:` beside `point_colour:`.
   @impl Giggly.Geom
-  def option_conflicts(options), do: LineStyle.vline_conflicts(options)
+  def option_conflicts(options),
+    do:
+      GigRidges.LineStyle.vline_conflicts(options) ++
+        GigRidges.PointStyle.point_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(geom), do: Ridgeline.accepted_aesthetics(ridgeline(geom))

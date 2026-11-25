@@ -2474,6 +2474,174 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "jittered points" do
+    # The rows of the layer whose datatype is "point", each column's values.
+    defp points(frame, columns) do
+      types = DataFrame.pull(frame, :datatype)
+      rows = DataFrame.slice(frame, for({"point", index} <- Enum.with_index(types), do: index))
+      Enum.map(columns, &DataFrame.pull(rows, &1))
+    end
+
+    defp pointed(options) do
+      @spread
+      |> Plot.new(%{x: :v, y: :g})
+      |> GigRidges.geom_density_ridges(
+        [bandwidth: 1, jittered_points: true, position: :identity] ++ options
+      )
+    end
+
+    defp close_to?(read, golden),
+      do: Enum.all?(Enum.zip_with(read, golden, &abs(&1 - &2)), &(&1 < 1.0e-6))
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, jittered_points = TRUE, position = "identity")` over @spread: a row for each
+    # value, `datatype` "point", 1037 rows in all; a's at -1, -0.5, 0, 0, 0.5 and 1, densities the
+    # ridge's there, 0.2363480, 0.3042582, 0.3307764, 0.3307764, 0.3042582 and 0.2363480, each on
+    # its baseline, `ymin` 1, below the ridge's top, `ymax` 2.286145, 2.655694, 2.8, 2.8, 2.655694
+    # and 2.286145; under `quantile_lines = TRUE` each point's `ecdf`, 0.1972081, 0.3319727,
+    # 0.4922323, 0.4922323, 0.6537373 and 0.7916914, and band, 1, 1, 2, 2, 4, 4; and no points for a
+    # group of two values, which has no density.
+    test "writes a row for each of each group's values, at its value under the ridge" do
+      frame = [] |> pointed() |> Giggly.layer_data()
+      assert DataFrame.row_count(frame) == 1037
+
+      [x, density, ymin, ymax, group] = points(frame, [:x, :density, :ymin, :ymax, :group])
+      a = fn values -> for {value, 1} <- Enum.zip(values, group), do: value end
+      [ax, adensity, aymin, aymax] = Enum.map([x, density, ymin, ymax], a)
+
+      assert ax == [-1.0, -0.5, 0.0, 0.0, 0.5, 1.0]
+
+      assert close_to?(adensity, [
+               0.2363480,
+               0.3042582,
+               0.3307764,
+               0.3307764,
+               0.3042582,
+               0.2363480
+             ])
+
+      assert aymin == List.duplicate(1, 6)
+      assert close_to?(aymax, [2.286145, 2.655694, 2.8, 2.8, 2.655694, 2.286145])
+
+      [ecdf, quantile, group] =
+        [quantile_lines: true]
+        |> pointed()
+        |> Giggly.layer_data()
+        |> points([:ecdf, :quantile, :group])
+
+      [aecdf, aquantile] =
+        Enum.map([ecdf, quantile], fn values ->
+          for {value, 1} <- Enum.zip(values, group), do: value
+        end)
+
+      assert close_to?(aecdf, [0.1972081, 0.3319727, 0.4922323, 0.4922323, 0.6537373, 0.7916914])
+      assert aquantile == [1, 1, 2, 2, 4, 4]
+
+      small =
+        @spread
+        |> Map.update!("v", &(&1 ++ [4, 5]))
+        |> Map.update!("g", &(&1 ++ ["c", "c"]))
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, jittered_points: true, position: :identity)
+        |> Giggly.layer_data()
+
+      [groups] = points(small, [:group])
+      assert Enum.uniq(groups) == [1, 2]
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: each ridge's points drawn after it and its lines and
+    # top line, ridge by ridge, and after the outlined fill under `geom_density_ridges2()`; each
+    # point R's shape 19, 1.5 mm, outlined 0.5 mm, a circle 1.95 points across in Giggly's, in the
+    # ridge's colour and alpha, `colour = "red", alpha = 0.5` drawing them red half seen; and
+    # `point_shape = 21, point_size = 3, point_colour, point_fill, point_alpha = 0.3,
+    # point_stroke = 2` each over the ridge's. Departure: a colour is a CSS name, as Giggly takes
+    # one, `"green"` #008000, where R's is #00FF00.
+    test "draws each ridge's points after it, in their own style over the ridge's" do
+      order = fn plot ->
+        plot
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<(polygon|polyline|line|circle)\b/, &1))
+        |> Enum.map(fn [_element, tag] -> tag end)
+        |> Enum.chunk_by(& &1)
+        |> Enum.map(&{hd(&1), length(&1)})
+      end
+
+      assert order.(pointed([])) ==
+               [
+                 {"polygon", 1},
+                 {"polyline", 1},
+                 {"circle", 7},
+                 {"polygon", 1},
+                 {"polyline", 1},
+                 {"circle", 6}
+               ]
+
+      assert order.(pointed(quantile_lines: true)) ==
+               [{"polygon", 1}, {"line", 3}, {"polyline", 1}, {"circle", 7}] ++
+                 [{"polygon", 1}, {"line", 3}, {"polyline", 1}, {"circle", 6}]
+
+      closed =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges2(
+          bandwidth: 1,
+          jittered_points: true,
+          position: :identity
+        )
+
+      assert order.(closed) == [{"polygon", 1}, {"circle", 7}, {"polygon", 1}, {"circle", 6}]
+
+      circle = fn options ->
+        options
+        |> pointed()
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.run(~r/<circle [^>]*r='([0-9.]+)' style='([^']*)'/, &1))
+        |> tl()
+      end
+
+      assert circle.([]) == ["1.95", "stroke-width: 0.71; stroke: #000000; fill: #000000;"]
+
+      [_r, ridge] = circle.(colour: "red", alpha: 0.5)
+      assert ridge =~ "stroke: #FF0000; stroke-opacity: 0.50"
+
+      [r, own] =
+        circle.(
+          colour: "red",
+          point_shape: 21,
+          point_size: 3,
+          point_colour: "green",
+          point_fill: "yellow",
+          point_alpha: 0.3,
+          point_stroke: 2
+        )
+
+      assert r == "4.62"
+      assert own =~ "stroke-width: 2.83; stroke: #008000; stroke-opacity: 0.30; fill: #FFFF00"
+    end
+
+    test "refuses points' styles Giggly refuses, and both spellings of their colour" do
+      for {option, value} <- [
+            point_shape: 26,
+            point_size: -1,
+            point_stroke: -1,
+            point_alpha: 2,
+            point_fill: "grey50"
+          ] do
+        assert_raise NimbleOptions.ValidationError, ~r/:#{option}/, fn ->
+          pointed([{option, value}])
+        end
+      end
+
+      assert_raise ArgumentError, ~r/takes point_color: or point_colour:, not both/, fn ->
+        pointed(point_color: "blue", point_colour: "red")
+      end
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame

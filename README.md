@@ -58,7 +58,9 @@ each of which may be mapped instead, and `panel_scaling:` for the density ridges
 `bandwidth:`, `from:`, `to:` and `n:` for the density, whose rows a mapped `weight` weighs, with
 `quantile_lines:`, `quantiles:` and `quantile_fun:` drawing a line up each ridge at each of its
 group's quantiles, in the ridge's look or the `vline_color:`, `vline_width:` and `vline_linetype:`
-given, and `calc_ecdf:` writing each place's `ecdf` and quantile band without the lines.
+given, `calc_ecdf:` writing each place's `ecdf` and quantile band without the lines, and
+`jittered_points:` drawing each value as a point under its ridge, in the `point_shape:`,
+`point_size:`, `point_stroke:`, `point_color:`, `point_fill:` and `point_alpha:` given.
 
 ## Relationship to ggridges
 

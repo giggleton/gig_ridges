@@ -10,32 +10,25 @@ defmodule GigRidges.DensityRidgelineGradient do
 
   alias GigRidges.{DensityRidgeline, RidgelineGradient}
 
-  defstruct scale: :none,
-            rel_min_height: :none,
-            panel_scaling: true,
-            gradient_lwd: 0.5,
-            vline_color: :unset,
-            vline_colour: :unset,
-            vline_width: :unset,
-            vline_linetype: :unset
+  defstruct [scale: :none, rel_min_height: :none, panel_scaling: true, gradient_lwd: 0.5] ++
+              GigRidges.LineStyle.vline_fields() ++ GigRidges.PointStyle.point_fields()
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           rel_min_height: :none | float(),
           panel_scaling: boolean(),
-          gradient_lwd: float(),
-          vline_color: :unset | String.t() | :none,
-          vline_colour: :unset | String.t() | :none,
-          vline_width: :unset | float(),
-          vline_linetype: :unset | tuple() | :none
+          gradient_lwd: float()
         }
 
   @impl Giggly.Geom
   def options, do: DensityRidgeline.options() ++ [gradient_lwd: RidgelineGradient.gradient_lwd()]
 
-  # `vline_color:` and `vline_colour:` given at once.
+  # `vline_color:` beside `vline_colour:`, or `point_color:` beside `point_colour:`.
   @impl Giggly.Geom
-  def option_conflicts(options), do: GigRidges.LineStyle.vline_conflicts(options)
+  def option_conflicts(options),
+    do:
+      GigRidges.LineStyle.vline_conflicts(options) ++
+        GigRidges.PointStyle.point_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(geom), do: DensityRidgeline.accepted_aesthetics(density(geom))
