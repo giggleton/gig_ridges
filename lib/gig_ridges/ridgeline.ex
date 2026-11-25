@@ -183,14 +183,9 @@ defmodule GigRidges.Ridgeline do
       |> DataFrame.put(columns.low, lows)
       |> DataFrame.put(columns.high, highs)
 
-    case line_rows(ranged) do
-      {_ridges, []} ->
-        Geom.setup_data(ribbon(ridgeline), ranged, axis_types)
-
-      {ridges, lines} ->
-        set_up = Geom.setup_data(ribbon(ridgeline), DataFrame.slice(ranged, ridges), axis_types)
-        DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, lines), set_up)])
-    end
+    {ridges, lines} = line_rows(ranged)
+    set_up = Geom.setup_data(ribbon(ridgeline), DataFrame.slice(ranged, ridges), axis_types)
+    DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, lines), set_up)])
   end
 
   # Which of the rows are a ridge's points and which the quantile lines up it the density ridges'

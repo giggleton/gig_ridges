@@ -2107,6 +2107,10 @@ defmodule GigRidgesTest do
       assert quantile == [1, 2, 3, 1, 2, 3]
       assert near?(ymax, [2.717456, 2.8, 2.717456, 2.201623, 2.316774, 2.201623])
 
+      [ndensity] = quantile_lines(frame, [:ndensity])
+      assert near?(Enum.take(ndensity, 3), [0.9541422, 1.0, 0.9541422])
+      assert frame |> DataFrame.pull(:ecdf) |> hd() == 0.0
+
       ridges = DataFrame.pull(frame, :ecdf)
       assert near?([Enum.at(ridges, 255), Enum.at(ridges, 1023)], [0.4844645, 0.9996110])
 
@@ -2155,6 +2159,157 @@ defmodule GigRidgesTest do
     # `colour = "red"` beside `vline_color` drawing the lines in the latter; and so under
     # `geom_density_ridges2()`, `geom_density_ridges_gradient()` and the stat drawn by
     # `geom_ridgeline()`. Departure: a colour is a CSS name or a hex colour, as Giggly takes one,
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, group a of @spread under `stat_density_ridges(geom =
+    # "density_ridges", bandwidth = 1, quantile_lines = TRUE)`: `quantiles = 2` one line, at 0, its
+    # ecdf 0.4922323; `quantiles = c(0, 1)` lines at -1 and 1; over places -1, 0 and 1 (`from = -1,
+    # to = 1, n = 3`), its median on the place 0, the bands 1, 2 and 4, a place on a quantile in
+    # the band below it, its lines' densities 0.2955113, 0.3309750 and 0.2955113; and under
+    # `quantiles = c(0, 1)` there, lines on the first place and the last, their densities the
+    # places', 0.2364050, their ecdf 0 and 0.5673800, the bands 1, 2 and 2.
+    test "places lines at 0 and 1, and bands a place on a quantile below it" do
+      a = fn options ->
+        frame = options |> lined() |> Giggly.layer_data()
+        rows = Enum.zip([DataFrame.pull(frame, :group), DataFrame.pull(frame, :datatype)])
+        own = for {{1, type}, index} <- Enum.with_index(rows), do: {type, index}
+        lines = DataFrame.slice(frame, for({"vline", index} <- own, do: index))
+        ridge = DataFrame.slice(frame, for({"ridgeline", index} <- own, do: index))
+
+        {Enum.map([:x, :density, :ecdf], &DataFrame.pull(lines, &1)),
+         DataFrame.pull(ridge, :quantile)}
+      end
+
+      {[[median], _density, [ecdf]], _bands} = a.(quantiles: 2)
+      assert median == 0.0 and near?([ecdf], [0.4922323])
+
+      {[ends, _density, _ecdf], _bands} = a.(quantiles: [0, 1])
+      assert ends == [-1.0, 1.0]
+
+      {[_x, density, _ecdf], bands} = a.(from: -1, to: 1, n: 3)
+      assert near?(density, [0.2955113, 0.3309750, 0.2955113])
+      assert bands == [1, 2, 4]
+
+      {[x, density, ecdf], bands} = a.(from: -1, to: 1, n: 3, quantiles: [0, 1])
+      assert x == [-1.0, 1.0]
+      assert near?(density, [0.2364050, 0.2364050]) and near?(ecdf, [0.0, 0.5673800])
+      assert bands == [1, 2, 2]
+
+      for quantiles <- [[0.5, 1.5], [0.5, :half], [-0.1]] do
+        assert_raise NimbleOptions.ValidationError, ~r/:quantiles/, fn ->
+          lined(quantiles: quantiles)
+        end
+      end
+    end
+
+    test "maps a height to the ecdf, a fill to the band, and draws no rows for no values" do
+      frame =
+        @spread
+        |> Plot.new(%{x: :v, y: :g, height: {:after_stat, [:ecdf]}})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, quantile_lines: true)
+        |> Giggly.layer_data()
+
+      assert DataFrame.pull(frame, :height) == DataFrame.pull(frame, :ecdf)
+
+      banded =
+        @spread
+        |> Plot.new(%{x: :v, y: :g, fill: {:after_stat, [:quantile]}})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, quantile_lines: true)
+        |> Giggly.layer_data()
+
+      assert banded |> DataFrame.pull(:fill) |> Enum.uniq() |> length() == 4
+
+      empty = Plot.new(%{"v" => [nil, nil, nil], "g" => ~w(a a a)}, %{x: :v, y: :g})
+
+      for {options, columns} <- [
+            {[], [:datatype]},
+            {[quantile_lines: true], [:datatype, :ecdf, :quantile]}
+          ] do
+        names =
+          empty
+          |> GigRidges.geom_density_ridges(options)
+          |> Giggly.layer_data()
+          |> DataFrame.names()
+
+        assert Enum.all?(columns, &(&1 in names))
+      end
+    end
+
+    test "draws each line straight up from the ridge's baseline to the ridge" do
+      svg = [] |> lined() |> Plot.theme_void() |> Giggly.to_svg() |> IO.iodata_to_binary()
+
+      lines =
+        ~r/<line x1='([0-9.]+)' y1='([0-9.]+)' x2='([0-9.]+)' y2='([0-9.]+)'/
+        |> Regex.scan(svg)
+        |> Enum.map(fn [_line | ends] -> Enum.map(ends, &String.to_float/1) end)
+
+      bases =
+        ~r/<polygon points='([^']*)'/
+        |> Regex.scan(svg)
+        |> Enum.map(fn [_polygon, points] ->
+          points
+          |> String.split(" ", trim: true)
+          |> Enum.map(fn point ->
+            point |> String.split(",") |> List.last() |> String.to_float()
+          end)
+          |> Enum.max()
+        end)
+
+      assert length(lines) == 6
+
+      for [x1, y1, x2, y2] <- lines do
+        assert x1 == x2 and y1 > y2
+        assert y1 in bases
+      end
+    end
+
+    # Each line type `vline_linetype:` takes, by name, by number and as a dash pattern, drawn as
+    # Giggly draws the same line type set by `linetype:`; a width of 0 taken; and line types Giggly
+    # refuses, refused.
+    test "takes every line type Giggly takes, drawn as Giggly draws it, and a width of 0" do
+      styled = fn options ->
+        options
+        |> lined()
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<line [^>]*style='([^']*)'/, &1))
+        |> Enum.map(&List.last/1)
+        |> Enum.uniq()
+      end
+
+      names = [:blank, :solid, :dashed, :dotted, :dotdash, :longdash, :twodash]
+
+      for line_type <- names ++ Enum.to_list(0..6) ++ [{2, 2}, {1, 2, 3, 4, 5, 6, 7, 8}] do
+        assert styled.(vline_linetype: line_type) == styled.(linetype: line_type)
+      end
+
+      assert styled.(vline_linetype: :blank) == []
+      [width] = styled.(vline_width: 0)
+      assert width =~ "stroke-width: 0.00"
+
+      for line_type <- [{0, 3}, {16, 1}, {1, 2, 3}, :wavy] do
+        assert_raise NimbleOptions.ValidationError, ~r/:vline_linetype/, fn ->
+          lined(vline_linetype: line_type)
+        end
+      end
+    end
+
+    test "refuses both spellings of the lines' colour under every ridgeline geom" do
+      ridges = Plot.new(@ridges, %{x: :x, y: :y, height: :h, group: :y})
+      density = Plot.new(@spread, %{x: :v, y: :g})
+      both = [vline_color: "blue", vline_colour: "red"]
+
+      layers = [
+        fn -> GigRidges.geom_ridgeline(ridges, both) end,
+        fn -> GigRidges.geom_ridgeline_gradient(ridges, both) end,
+        fn -> GigRidges.geom_density_ridges2(density, both) end,
+        fn -> GigRidges.geom_density_ridges_gradient(density, both) end
+      ]
+
+      for layer <- layers do
+        assert_raise ArgumentError, ~r/takes vline_color: or vline_colour:, not both/, layer
+      end
+    end
+
     # where R takes its own names too (`"grey50"`).
     test "draws the lines in a colour, width and line type of their own where given" do
       plot = Plot.new(@spread, %{x: :v, y: :g})

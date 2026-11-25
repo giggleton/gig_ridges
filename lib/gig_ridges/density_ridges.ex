@@ -284,8 +284,7 @@ defmodule GigRidges.DensityRidges do
     end)
   end
 
-  defp along([{low, low_value}, {high, _high_value}], _place) when high == low, do: low_value
-
+  # The value at `place` between two places, which are never one, the places running evenly.
   defp along([{low, low_value}, {high, high_value}], place),
     do: low_value + (high_value - low_value) * (place - low) / (high - low)
 
