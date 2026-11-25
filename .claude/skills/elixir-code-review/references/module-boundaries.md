@@ -9,10 +9,11 @@ user calls. The stat and geom modules beneath it (`GigRidges.DensityRidges`, `Gi
 `GigRidges.Ridgeline`, `GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`,
 `GigRidges.VRidgeline`, `GigRidges.DensityLine`, `GigRidges.RidgelineGradient`,
 `GigRidges.DensityRidgelineGradient`) are what those functions hand Giggly, with Giggly's own stats
-named by atom (`:identity`, `:density`); `GigRidges.KernelDensity`, `GigRidges.Binning`,
+named by atom (`:identity`, `:density`), and `GigRidges.PointsJitter` is a position a user hands a
+layer's `position:`; `GigRidges.KernelDensity`, `GigRidges.Binning`,
 `GigRidges.Groups`, `GigRidges.Gradient`, `GigRidges.LineStyle` and `GigRidges.PointStyle` are
 internal (`@moduledoc false`). Toward Giggly, gig_ridges is a plugin, and uses only Giggly's
-documented plugin API: the behaviours it adopts (`Giggly.Stat`, `Giggly.Geom`), and the modules and
+documented plugin API: the behaviours it adopts (`Giggly.Stat`, `Giggly.Geom`, `Giggly.Position`), and the modules and
 functions Giggly documents for plugins. Scales, the colour library Giggly reads, is taken by path
 for its documented `Scales.ColorOperations.parse/1`, the colour check Giggly's own options run.
 

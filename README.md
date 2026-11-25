@@ -60,7 +60,11 @@ each of which may be mapped instead, and `panel_scaling:` for the density ridges
 group's quantiles, in the ridge's look or the `vline_color:`, `vline_width:` and `vline_linetype:`
 given, `calc_ecdf:` writing each place's `ecdf` and quantile band without the lines, and
 `jittered_points:` drawing each value as a point under its ridge, in the `point_shape:`,
-`point_size:`, `point_stroke:`, `point_color:`, `point_fill:` and `point_alpha:` given.
+`point_size:`, `point_stroke:`, `point_color:`, `point_fill:` and `point_alpha:` given, and
+moved about its baseline by `position: {GigRidges.PointsJitter, ...}`, ggridges'
+`position_points_jitter()`, up to `width:` across and `height:` up or down from `yoffset:` above
+the baseline, drawn from `seed:`, with `adjust_vlines:` running the quantile lines across that
+band.
 
 ## Relationship to ggridges
 

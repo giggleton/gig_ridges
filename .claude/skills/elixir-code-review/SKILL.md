@@ -50,7 +50,7 @@ didn't touch, mention it once at the end under "Pre-existing, not from this chan
 
 3. **Read the code with its context.** For a module under review, also open the modules it
    calls, `lib/gig_ridges.ex` (the API), and the Giggly behaviour it adopts (`Giggly.Stat`,
-   `Giggly.Geom`, under `deps/giggly/lib/`). Most judgments depend on what the API already
+   `Giggly.Geom`, `Giggly.Position`, under `deps/giggly/lib/`). Most judgments depend on what the API already
    offers. For a test file under review, also open the module under test and any other test
    covering the same behavior — the layer and duplication judgments depend on both.
 

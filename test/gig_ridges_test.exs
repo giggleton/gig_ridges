@@ -2070,12 +2070,7 @@ defmodule GigRidgesTest do
   end
 
   describe "quantile lines" do
-    # The rows of the layer whose datatype is "vline", each column's values.
-    defp quantile_lines(frame, columns) do
-      types = DataFrame.pull(frame, :datatype)
-      lines = DataFrame.slice(frame, for({"vline", index} <- Enum.with_index(types), do: index))
-      Enum.map(columns, &DataFrame.pull(lines, &1))
-    end
+    defp quantile_lines(frame, columns), do: typed(frame, "vline", columns)
 
     defp lined(options) do
       @spread
@@ -2475,12 +2470,7 @@ defmodule GigRidgesTest do
   end
 
   describe "jittered points" do
-    # The rows of the layer whose datatype is "point", each column's values.
-    defp points(frame, columns) do
-      types = DataFrame.pull(frame, :datatype)
-      rows = DataFrame.slice(frame, for({"point", index} <- Enum.with_index(types), do: index))
-      Enum.map(columns, &DataFrame.pull(rows, &1))
-    end
+    defp points(frame, columns), do: typed(frame, "point", columns)
 
     defp pointed(options) do
       @spread
@@ -2728,6 +2718,155 @@ defmodule GigRidgesTest do
         pointed(point_color: "blue", point_colour: "red")
       end
     end
+  end
+
+  describe "GigRidges.PointsJitter" do
+    # Each point's baseline, a's and then b's.
+    @baselines List.duplicate(1, 6) ++ List.duplicate(2, 7)
+
+    defp jittered(position) do
+      @spread
+      |> Plot.new(%{x: :v, y: :g})
+      |> GigRidges.geom_density_ridges(
+        bandwidth: 1,
+        jittered_points: true,
+        quantile_lines: true,
+        position: position
+      )
+      |> Giggly.layer_data()
+    end
+
+    # Each point's distance across from its value and up from its baseline.
+    defp moves(frame) do
+      [x, ymin] = points(frame, [:x, :ymin])
+      values = [-1, -0.5, 0, 0, 0.5, 1, -9, -6, -3, 0, 3, 6, 9]
+      {Enum.zip_with(x, values, &(&1 - &2)), Enum.zip_with(ymin, @baselines, &(&1 - &2))}
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(geom = "density_ridges",
+    # bandwidth = 1, jittered_points = TRUE, quantile_lines = TRUE, position =
+    # position_points_jitter(width = 0.5, height = 0.3, yoffset = 0.4, seed = 1))` over @spread:
+    # each point's `x` within 0.5 of its value, its `ymin` 0.1 to 0.7 above its baseline, its `y`
+    # the baseline and its `ymax` the ridge's top, as unmoved; the ridges' rows and the quantile
+    # lines' as under `position = "identity"`. R's draws are not reproduced, so the points stand
+    # elsewhere in those bands.
+    test "moves each point within its band about its baseline, and nothing else" do
+      identity = jittered(:identity)
+      frame = jittered({GigRidges.PointsJitter, width: 0.5, height: 0.3, yoffset: 0.4, seed: 1})
+      {dx, dy} = moves(frame)
+
+      assert Enum.all?(dx, &(&1 >= -0.5 and &1 <= 0.5))
+      assert Enum.all?(dy, &(&1 >= 0.1 and &1 <= 0.7))
+      assert length(Enum.uniq(dx)) == 13
+      assert length(Enum.uniq(dy)) == 13
+      assert points(frame, [:y, :ymax]) == points(identity, [:y, :ymax])
+
+      for type <- ["ridgeline", "vline"] do
+        columns = [:x, :y, :ymin, :ymax, :density]
+        assert typed(frame, type, columns) == typed(identity, type, columns)
+      end
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `position_points_jitter(seed = 1)` over @spread:
+    # each point's `x` its value, and its `ymin` within 0.2 of its baseline.
+    test "moves each point only up or down, by up to 0.2, unless told otherwise" do
+      {dx, dy} = jittered(GigRidges.PointsJitter) |> moves()
+      assert Enum.all?(dx, &(&1 == 0))
+      assert Enum.all?(dy, &(abs(&1) <= 0.2))
+      assert Enum.any?(dy, &(abs(&1) > 0.1))
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `position_points_jitter(width = 0.5, height = 0.3,
+    # yoffset = 0.4, adjust_vlines = TRUE, seed = 1)` over @spread: each quantile line from 0.1
+    # above its baseline to 0.7, 1.1 to 1.7 for a's, 2.1 to 2.7 for b's; and under `height = 0,
+    # yoffset = -0.25`, every point and line 0.25 below its baseline, 0.75 and 1.75.
+    test "runs the quantile lines across the points' band under adjust_vlines:" do
+      frame =
+        jittered(
+          {GigRidges.PointsJitter,
+           width: 0.5, height: 0.3, yoffset: 0.4, adjust_vlines: true, seed: 1}
+        )
+
+      [ymin, ymax] = quantile_lines(frame, [:ymin, :ymax])
+      assert close_to?(ymin, [1.1, 1.1, 1.1, 2.1, 2.1, 2.1])
+      assert close_to?(ymax, [1.7, 1.7, 1.7, 2.7, 2.7, 2.7])
+
+      flat =
+        jittered({GigRidges.PointsJitter, height: 0, yoffset: -0.25, adjust_vlines: true})
+
+      {_dx, dy} = moves(flat)
+      assert close_to?(dy, List.duplicate(-0.25, 13))
+      [ymin, ymax] = quantile_lines(flat, [:ymin, :ymax])
+      assert close_to?(ymin, [0.75, 0.75, 0.75, 1.75, 1.75, 1.75])
+      assert ymin == ymax
+    end
+
+    # The same seed moves the same points the same way, as ggridges' does; the distances drawn
+    # from it are Erlang's, each panel drawing afresh from it, as Giggly's jitter draws them.
+    test "draws the same distances from the same seed, each panel afresh" do
+      jitter = {GigRidges.PointsJitter, width: 0.5, seed: 7}
+      assert moves(jittered(jitter)) == moves(jittered(jitter))
+      refute moves(jittered(jitter)) == moves(jittered({GigRidges.PointsJitter, width: 0.5}))
+
+      faceted =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(bandwidth: 1, jittered_points: true, position: jitter)
+        |> Plot.facet_wrap(:g)
+        |> Giggly.layer_data()
+
+      {[a | _a], [a_up | _a_ups]} = moves(faceted)
+      {dx, dy} = moves(faceted)
+      assert close_to?([Enum.at(dx, 6), Enum.at(dy, 6)], [a, a_up])
+      refute close_to?([Enum.at(dx, 1), Enum.at(dy, 1)], [a, a_up])
+    end
+
+    test "draws each point where the jitter moved it" do
+      heights = fn position ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges(
+          bandwidth: 1,
+          jittered_points: true,
+          position: position
+        )
+        |> Plot.theme_void()
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<circle [^>]*cy='([0-9.]+)'/, &1))
+        |> Enum.map(fn [_circle, cy] -> cy end)
+      end
+
+      assert length(Enum.uniq(heights.(:identity))) == 2
+      assert length(Enum.uniq(heights.({GigRidges.PointsJitter, seed: 1}))) == 13
+    end
+
+    test "leaves a layer with no points' rows, as a ridgeline's, as it is" do
+      ridgeline = fn position ->
+        @ridges
+        |> Plot.new(%{x: :x, y: :y, height: :h, group: :y})
+        |> GigRidges.geom_ridgeline(position: position)
+        |> Giggly.layer_data()
+      end
+
+      assert ridgeline.({GigRidges.PointsJitter, width: 1, yoffset: 1}) ==
+               ridgeline.(:identity)
+    end
+
+    test "refuses a distance below 0, an offset that is not a number, and a seed not whole" do
+      for {option, value} <- [width: -0.1, height: -1, yoffset: "up", seed: 1.5] do
+        assert_raise NimbleOptions.ValidationError, ~r/#{option}/, fn ->
+          jittered({GigRidges.PointsJitter, [{option, value}]})
+        end
+      end
+    end
+  end
+
+  # The rows of `frame` whose datatype is `type`, each column's values.
+  defp typed(frame, type, columns) do
+    types = DataFrame.pull(frame, :datatype)
+    rows = DataFrame.slice(frame, for({^type, index} <- Enum.with_index(types), do: index))
+    Enum.map(columns, &DataFrame.pull(rows, &1))
   end
 
   # Each group's `columns`, the groups in order.
