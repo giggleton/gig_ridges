@@ -55,7 +55,10 @@ Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewi
 `linetype:`, `position:`) beside its own: `scale:` for the ridges, with `min_height:` for the
 ridgeline and `rel_min_height:`, a share of the layer's greatest height, for the density ridges,
 each of which may be mapped instead, and `panel_scaling:` for the density ridges' heights; and
-`bandwidth:`, `from:`, `to:` and `n:` for the density, whose rows a mapped `weight` weighs.
+`bandwidth:`, `from:`, `to:` and `n:` for the density, whose rows a mapped `weight` weighs, with
+`quantile_lines:`, `quantiles:` and `quantile_fun:` drawing a line up each ridge at each of its
+group's quantiles, in the ridge's look or the `vline_color:`, `vline_width:` and `vline_linetype:`
+given.
 
 ## Relationship to ggridges
 

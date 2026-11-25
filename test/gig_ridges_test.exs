@@ -2069,6 +2069,205 @@ defmodule GigRidgesTest do
     end
   end
 
+  describe "quantile lines" do
+    # The rows of the layer whose datatype is "vline", each column's values.
+    defp quantile_lines(frame, columns) do
+      types = DataFrame.pull(frame, :datatype)
+      lines = DataFrame.slice(frame, for({"vline", index} <- Enum.with_index(types), do: index))
+      Enum.map(columns, &DataFrame.pull(lines, &1))
+    end
+
+    defp lined(options) do
+      @spread
+      |> Plot.new(%{x: :v, y: :g})
+      |> GigRidges.geom_density_ridges([bandwidth: 1, quantile_lines: true] ++ options)
+    end
+
+    defp near?(read, golden),
+      do: Enum.all?(Enum.zip_with(read, golden, &abs(&1 - &2)), &(&1 < 1.0e-6))
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges(bandwidth = 1, quantile_lines =
+    # TRUE)` over @spread: a row for each of each group's quartiles, `datatype` "vline", 1030 rows
+    # in all; a's at -0.375, 0 and 0.375, densities 0.3156078, 0.3307764 and 0.3156078, `ecdf`
+    # 0.3704846, 0.4922323 and 0.6146923, reaching 2.717456, 2.8 and 2.717456; b's at -4.5, 0 and
+    # 4.5, `ecdf` 0.2846661, 0.4984534 and 0.7132346; each line's density and `ecdf` the ridge's
+    # read by linear interpolation; and every ridge row's `ecdf` the density's left sum times the
+    # step between places, a's 256th 0.4844645 and b's last 0.9996110, its `quantile` the band it
+    # falls in, a factor of levels 1 to 4.
+    test "writes a row for each of each group's quantiles, and each place's ecdf and band" do
+      frame = [] |> lined() |> Giggly.layer_data()
+      assert DataFrame.row_count(frame) == 1030
+
+      [x, density, ecdf, quantile, ymax] =
+        quantile_lines(frame, [:x, :density, :ecdf, :quantile, :ymax])
+
+      assert x == [-0.375, 0.0, 0.375, -4.5, 0.0, 4.5]
+      assert near?(density, [0.3156078, 0.3307764, 0.3156078, 0.0370512, 0.0582119, 0.0370512])
+      assert near?(ecdf, [0.3704846, 0.4922323, 0.6146923, 0.2846661, 0.4984534, 0.7132346])
+      assert quantile == [1, 2, 3, 1, 2, 3]
+      assert near?(ymax, [2.717456, 2.8, 2.717456, 2.201623, 2.316774, 2.201623])
+
+      ridges = DataFrame.pull(frame, :ecdf)
+      assert near?([Enum.at(ridges, 255), Enum.at(ridges, 1023)], [0.4844645, 0.9996110])
+
+      bands = DataFrame.pull(frame, :quantile)
+      assert Enum.map([0, 169, 249, 259, 339, 511], &Enum.at(bands, &1)) == [1, 1, 2, 3, 4, 4]
+
+      assert DataFrame.category(frame, :quantile) ==
+               {:category, levels: [1, 2, 3, 4], ordered: false}
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, over @spread: `quantiles = c(0.1, 0.9)` a's lines at
+    # -0.75 and 0.75 and b's at -7.2 and 7.2; `quantile_fun = mean` one line each, at 0; and with no
+    # quantile lines every row's `datatype` "ridgeline", and no `ecdf`.
+    test "draws lines at the probabilities given, or where quantile_fun places them" do
+      [x] = [quantiles: [0.1, 0.9]] |> lined() |> Giggly.layer_data() |> quantile_lines([:x])
+      assert near?(x, [-0.75, 0.75, -7.2, 7.2])
+
+      mean = fn values, _probabilities -> Enum.sum(values) / length(values) end
+      [x] = [quantile_fun: mean] |> lined() |> Giggly.layer_data() |> quantile_lines([:x])
+      assert x == [0.0, 0.0]
+
+      plain =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.geom_density_ridges()
+        |> Giggly.layer_data()
+
+      assert Enum.uniq(DataFrame.pull(plain, :datatype)) == ["ridgeline"]
+      refute :ecdf in DataFrame.names(plain)
+
+      for quantiles <- [1, [1.5], :four] do
+        assert_raise NimbleOptions.ValidationError, ~r/:quantiles/, fn ->
+          lined(quantiles: quantiles)
+        end
+      end
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3: each ridge drawn as its fill, its lines, then its top
+    # line, under `geom_density_ridges()`, `geom_density_ridges_gradient()` and the stat drawn by
+    # `geom_ridgeline()`; as its outlined fill, then its lines, under `geom_density_ridges2()`;
+    # each line from the ridge's baseline to the ridge, in its colour, line width and line type,
+    # `colour = "red", linewidth = 2` drawing them red, 4.27 points wide.
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `geom_density_ridges(quantile_lines = TRUE)` over
+    # @spread: `vline_colour = "blue"`, or `vline_color`, draws the lines #0000FF; `vline_width = 3`
+    # 3 mm wide, 6.40 points; `vline_linetype = "dotted"` dotted; each over the ridge's own look,
+    # `colour = "red"` beside `vline_color` drawing the lines in the latter; and so under
+    # `geom_density_ridges2()`, `geom_density_ridges_gradient()` and the stat drawn by
+    # `geom_ridgeline()`. Departure: a colour is a CSS name or a hex colour, as Giggly takes one,
+    # where R takes its own names too (`"grey50"`).
+    test "draws the lines in a colour, width and line type of their own where given" do
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+
+      styles = fn layer ->
+        layer
+        |> Plot.theme_void()
+        |> Plot.theme(legend_position: :none)
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<line [^>]*style='([^']*)'/, &1))
+        |> Enum.map(&List.last/1)
+        |> Enum.uniq()
+      end
+
+      looked = fn options ->
+        [style] = styles.(lined(options))
+        style
+      end
+
+      assert looked.(vline_colour: "blue") =~ "stroke: #0000FF"
+      assert looked.(vline_color: "blue") =~ "stroke: #0000FF"
+      assert looked.(vline_width: 3) =~ "stroke-width: 6.40; stroke: #000000"
+      assert looked.(vline_linetype: :dotted) =~ "stroke-dasharray: 1.42,4.27"
+      assert looked.(colour: "red", vline_color: "#00FF00") =~ "stroke: #00FF00"
+
+      others = [
+        GigRidges.geom_density_ridges2(plot,
+          bandwidth: 1,
+          quantile_lines: true,
+          vline_color: "blue"
+        ),
+        @spread
+        |> Plot.new(%{x: :v, y: :g, fill: {:after_stat, [:x]}})
+        |> GigRidges.geom_density_ridges_gradient(
+          bandwidth: 1,
+          quantile_lines: true,
+          vline_color: "blue"
+        ),
+        Plot.layer(plot, %{},
+          stat: GigRidges.DensityRidges,
+          geom: GigRidges.Ridgeline,
+          bandwidth: 1,
+          quantile_lines: true,
+          vline_color: "blue"
+        )
+      ]
+
+      for layer <- others do
+        assert [style] = styles.(layer)
+        assert style =~ "stroke: #0000FF"
+      end
+
+      assert_raise ArgumentError, ~r/takes vline_color: or vline_colour:, not both/, fn ->
+        GigRidges.geom_density_ridges(plot, vline_color: "blue", vline_colour: "red")
+      end
+
+      for {option, value} <- [vline_color: "grey50", vline_linetype: :wavy, vline_width: -1] do
+        assert_raise NimbleOptions.ValidationError, ~r/:#{option}/, fn ->
+          GigRidges.geom_density_ridges(plot, [{option, value}])
+        end
+      end
+    end
+
+    test "draws each line between the ridge's fill and its top, in the ridge's look" do
+      order = fn plot ->
+        plot
+        |> Plot.theme_void()
+        |> Plot.theme(legend_position: :none)
+        |> Giggly.to_svg()
+        |> IO.iodata_to_binary()
+        |> then(&Regex.scan(~r/<(polygon|polyline|line)\b/, &1))
+        |> Enum.map(fn [_element, tag] -> tag end)
+        |> Enum.chunk_by(& &1)
+        |> Enum.map(&{hd(&1), length(&1)})
+      end
+
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+      ridge = [{"polygon", 1}, {"line", 3}, {"polyline", 1}]
+
+      assert order.(lined([])) == ridge ++ ridge
+
+      layered =
+        Plot.layer(plot, %{},
+          stat: GigRidges.DensityRidges,
+          geom: GigRidges.Ridgeline,
+          bandwidth: 1,
+          quantile_lines: true
+        )
+
+      assert order.(layered) == ridge ++ ridge
+
+      closed = GigRidges.geom_density_ridges2(plot, bandwidth: 1, quantile_lines: true)
+      assert order.(closed) == List.duplicate([{"polygon", 1}, {"line", 3}], 2) |> Enum.concat()
+
+      gradient =
+        @spread
+        |> Plot.new(%{x: :v, y: :g, fill: {:after_stat, [:x]}})
+        |> GigRidges.geom_density_ridges_gradient(bandwidth: 1, quantile_lines: true)
+
+      pieces = [{"polygon", 295}, {"line", 3}, {"polyline", 1}]
+      assert order.(gradient) == pieces ++ pieces
+
+      svg = [colour: "red", linewidth: 2] |> lined() |> Giggly.to_svg() |> IO.iodata_to_binary()
+
+      styles =
+        ~r/<line [^>]*style='([^']*)'/ |> Regex.scan(svg) |> Enum.map(&List.last/1) |> Enum.uniq()
+
+      assert [style] = styles
+      assert style =~ "stroke-width: 4.27; stroke: #FF0000"
+    end
+  end
+
   # Each group's `columns`, the groups in order.
   defp by_group(frame, columns) do
     frame

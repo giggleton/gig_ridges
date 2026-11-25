@@ -8,11 +8,13 @@ gig_ridges is one small library with one API module, `GigRidges`: its layer func
 user calls. The stat and geom modules beneath it (`GigRidges.DensityRidges`, `GigRidges.Binline`,
 `GigRidges.Ridgeline`, `GigRidges.DensityRidgeline`, `GigRidges.DensityRidgeline2`,
 `GigRidges.VRidgeline`, `GigRidges.DensityLine`, `GigRidges.RidgelineGradient`,
-`GigRidges.DensityRidgelineGradient`) are what those functions hand Giggly, with Giggly's own
-stats named by atom (`:identity`, `:density`); `GigRidges.KernelDensity`, `GigRidges.Binning`,
-`GigRidges.Groups` and `GigRidges.Gradient` are internal (`@moduledoc false`). Toward
-Giggly, gig_ridges is a plugin, and uses only Giggly's documented plugin API: the behaviours it
-adopts (`Giggly.Stat`, `Giggly.Geom`), and the modules and functions Giggly documents for plugins.
+`GigRidges.DensityRidgelineGradient`) are what those functions hand Giggly, with Giggly's own stats
+named by atom (`:identity`, `:density`); `GigRidges.KernelDensity`, `GigRidges.Binning`,
+`GigRidges.Groups`, `GigRidges.Gradient` and `GigRidges.LineStyle` are internal (`@moduledoc false`).
+Toward Giggly, gig_ridges is a plugin, and uses only Giggly's documented plugin API: the behaviours
+it adopts (`Giggly.Stat`, `Giggly.Geom`), and the modules and functions Giggly documents for
+plugins. Scales, the colour library Giggly reads, is taken by path for its documented
+`Scales.ColorOperations.parse/1`, the colour check Giggly's own options run.
 
 Nothing checks this but the review. gig_ridges has no `use Boundary`, and Giggly's boundary
 exports everything, so a call into a Giggly module or function that is `@moduledoc false` or

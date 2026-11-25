@@ -10,17 +10,32 @@ defmodule GigRidges.DensityRidgelineGradient do
 
   alias GigRidges.{DensityRidgeline, RidgelineGradient}
 
-  defstruct scale: :none, rel_min_height: :none, panel_scaling: true, gradient_lwd: 0.5
+  defstruct scale: :none,
+            rel_min_height: :none,
+            panel_scaling: true,
+            gradient_lwd: 0.5,
+            vline_color: :unset,
+            vline_colour: :unset,
+            vline_width: :unset,
+            vline_linetype: :unset
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           rel_min_height: :none | float(),
           panel_scaling: boolean(),
-          gradient_lwd: float()
+          gradient_lwd: float(),
+          vline_color: :unset | String.t() | :none,
+          vline_colour: :unset | String.t() | :none,
+          vline_width: :unset | float(),
+          vline_linetype: :unset | tuple() | :none
         }
 
   @impl Giggly.Geom
   def options, do: DensityRidgeline.options() ++ [gradient_lwd: RidgelineGradient.gradient_lwd()]
+
+  # `vline_color:` and `vline_colour:` given at once.
+  @impl Giggly.Geom
+  def option_conflicts(options), do: GigRidges.LineStyle.vline_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(geom), do: DensityRidgeline.accepted_aesthetics(density(geom))

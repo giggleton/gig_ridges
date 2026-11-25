@@ -11,12 +11,22 @@ defmodule GigRidges.RidgelineGradient do
 
   alias GigRidges.Ridgeline
 
-  defstruct scale: :none, min_height: :none, gradient_lwd: 0.5
+  defstruct scale: :none,
+            min_height: :none,
+            gradient_lwd: 0.5,
+            vline_color: :unset,
+            vline_colour: :unset,
+            vline_width: :unset,
+            vline_linetype: :unset
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           min_height: :none | float(),
-          gradient_lwd: float()
+          gradient_lwd: float(),
+          vline_color: :unset | String.t() | :none,
+          vline_colour: :unset | String.t() | :none,
+          vline_width: :unset | float(),
+          vline_linetype: :unset | tuple() | :none
         }
 
   @impl Giggly.Geom
@@ -48,6 +58,10 @@ defmodule GigRidges.RidgelineGradient do
   @spec millimetres(float()) :: float()
   def millimetres(gradient_lwd), do: gradient_lwd / @line_width_units_per_millimetre
 
+  # `vline_color:` and `vline_colour:` given at once.
+  @impl Giggly.Geom
+  def option_conflicts(options), do: GigRidges.LineStyle.vline_conflicts(options)
+
   @impl Giggly.Geom
   def accepted_aesthetics(geom), do: Ridgeline.accepted_aesthetics(ridgeline(geom))
   @impl Giggly.Geom
@@ -76,6 +90,10 @@ defmodule GigRidges.RidgelineGradient do
     do: %Ridgeline{
       scale: geom.scale,
       min_height: geom.min_height,
-      gradient: millimetres(geom.gradient_lwd)
+      gradient: millimetres(geom.gradient_lwd),
+      vline_color: geom.vline_color,
+      vline_colour: geom.vline_colour,
+      vline_width: geom.vline_width,
+      vline_linetype: geom.vline_linetype
     }
 end

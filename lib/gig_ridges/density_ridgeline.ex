@@ -24,7 +24,7 @@ defmodule GigRidges.DensityRidgeline do
   use Giggly.Geom
 
   alias Giggly.DataFrame
-  alias GigRidges.Ridgeline
+  alias GigRidges.{LineStyle, Ridgeline}
 
   # `outline` and `gradient` are no options: the ridges' outline, the top alone here, and the whole
   # border under the closed density ridges' geom (`GigRidges.DensityRidgeline2`); and `:none`, or
@@ -34,14 +34,22 @@ defmodule GigRidges.DensityRidgeline do
             rel_min_height: :none,
             panel_scaling: true,
             outline: :upper,
-            gradient: :none
+            gradient: :none,
+            vline_color: :unset,
+            vline_colour: :unset,
+            vline_width: :unset,
+            vline_linetype: :unset
 
   @type t :: %__MODULE__{
           scale: :none | float(),
           rel_min_height: :none | float(),
           panel_scaling: boolean(),
           outline: :upper | :full,
-          gradient: :none | float()
+          gradient: :none | float(),
+          vline_color: :unset | String.t() | :none,
+          vline_colour: :unset | String.t() | :none,
+          vline_width: :unset | float(),
+          vline_linetype: :unset | tuple() | :none
         }
 
   @unmapped_scale 1.8
@@ -72,8 +80,12 @@ defmodule GigRidges.DensityRidgeline do
             "baseline (`true`), or the layer's ridges together, so a panel of lower heights " <>
             "draws lower ridges (`false`)."
       ]
-    ]
+    ] ++ LineStyle.vline_options()
   end
+
+  # `vline_color:` and `vline_colour:` given at once.
+  @impl Giggly.Geom
+  def option_conflicts(options), do: LineStyle.vline_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(geom), do: Ridgeline.accepted_aesthetics(ridgeline(geom))

@@ -30,11 +30,14 @@ defmodule GigRidges.MixProject do
   defp elixirc_paths(_env), do: ["lib"]
 
   # Giggly is taken by path from the worktree that holds its plugin API until that API is
-  # released; a Hex release of this package waits for Giggly's. Both paths are absolute, so a git
+  # released; a Hex release of this package waits for Giggly's. Scales, the colours Giggly reads,
+  # is taken as Giggly takes it, for its documented `Scales.ColorOperations.parse/1`, which checks
+  # a colour a gig_ridges option sets as Giggly checks its own. The paths are absolute, so a git
   # worktree of this repository, which sits elsewhere, finds them.
   defp deps do
     [
       {:giggly, path: "/home/srowley/repos/giggly/.claude/worktrees/next-increment-cf41fe"},
+      {:scales, "~> 0.2.0", path: "/home/srowley/repos/scales"},
       {:nx, "~> 1.0"},
       {:gig_datasets, path: "/home/srowley/repos/gig_datasets", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

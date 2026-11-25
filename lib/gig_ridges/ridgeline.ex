@@ -18,13 +18,17 @@ defmodule GigRidges.Ridgeline do
   It draws by delegation to Giggly's ribbon (`Giggly.Geom.Ribbon`): its setup works out each
   point's `ymin` and `ymax` and hands the rows to the ribbon's setup, and each ridge is drawn by the
   ribbon, as is its legend key, which needs room as wide as its line, as ggridges' keys do, where
-  the ribbon's needs twice that.
+  the ribbon's needs twice that. Rows whose `datatype` is `"vline"`, the quantile lines the density
+  ridges' stat writes, are kept from the ribbon and drawn as lines from each ridge's baseline up
+  to it, between its fill and its top line, in the ridge's colour, line width and line type, or in
+  the `vline_color:` (or `vline_colour:`), `vline_width:` and `vline_linetype:` given, each over
+  the ridge's own, as ggridges' `vline_*` set them.
   """
 
   use Giggly.Geom
 
   alias Giggly.{DataFrame, Geom}
-  alias GigRidges.Gradient
+  alias GigRidges.{Gradient, LineStyle}
 
   # Points, 1/72 inch, in a millimetre, as key sizes are given.
   @points_per_millimetre 72 / 25.4
@@ -51,7 +55,11 @@ defmodule GigRidges.Ridgeline do
             iscaled: false,
             outline: :upper,
             along: :x,
-            gradient: :none
+            gradient: :none,
+            vline_color: :unset,
+            vline_colour: :unset,
+            vline_width: :unset,
+            vline_linetype: :unset
 
   @type t :: %__MODULE__{
           scale: :none | float(),
@@ -62,7 +70,11 @@ defmodule GigRidges.Ridgeline do
           iscaled: boolean(),
           outline: :upper | :full,
           along: :x | :y,
-          gradient: :none | float()
+          gradient: :none | float(),
+          vline_color: :unset | String.t() | :none,
+          vline_colour: :unset | String.t() | :none,
+          vline_width: :unset | float(),
+          vline_linetype: :unset | tuple() | :none
         }
 
   @impl Giggly.Geom
@@ -82,8 +94,12 @@ defmodule GigRidges.Ridgeline do
           "The height below which a point is left out of its ridge, every point's, over a " <>
             "mapped `min_height`; 0 where neither gives one."
       ]
-    ]
+    ] ++ LineStyle.vline_options()
   end
+
+  # `vline_color:` and `vline_colour:` given at once.
+  @impl Giggly.Geom
+  def option_conflicts(options), do: LineStyle.vline_conflicts(options)
 
   @impl Giggly.Geom
   def accepted_aesthetics(%__MODULE__{cut_off: cut_off, along: along}),
@@ -167,7 +183,42 @@ defmodule GigRidges.Ridgeline do
       |> DataFrame.put(columns.low, lows)
       |> DataFrame.put(columns.high, highs)
 
-    Geom.setup_data(ribbon(ridgeline), ranged, axis_types)
+    case line_rows(ranged) do
+      {_ridges, []} ->
+        Geom.setup_data(ribbon(ridgeline), ranged, axis_types)
+
+      {ridges, lines} ->
+        set_up = Geom.setup_data(ribbon(ridgeline), DataFrame.slice(ranged, ridges), axis_types)
+        DataFrame.concat_rows([set_up, beside(DataFrame.slice(ranged, lines), set_up)])
+    end
+  end
+
+  # Which of the rows are a ridge's points and which the quantile lines up it the density ridges'
+  # stat writes, whose `datatype` is `"vline"`, by their indices.
+  defp line_rows(frame) do
+    types =
+      if :datatype in DataFrame.names(frame),
+        do: DataFrame.pull(frame, :datatype),
+        else: List.duplicate("ridgeline", DataFrame.row_count(frame))
+
+    {lines, ridges} =
+      types
+      |> Enum.with_index()
+      |> Enum.split_with(fn {type, _index} -> type == "vline" end)
+
+    {Enum.map(ridges, &elem(&1, 1)), Enum.map(lines, &elem(&1, 1))}
+  end
+
+  # The line rows beside the ridges' set up, with each column the ridges' setup added, its first
+  # row's value.
+  defp beside(lines, set_up) do
+    count = DataFrame.row_count(lines)
+
+    (DataFrame.names(set_up) -- DataFrame.names(lines))
+    |> Enum.reduce(lines, fn name, filled ->
+      first = set_up |> DataFrame.pull(name) |> List.first()
+      DataFrame.put(filled, name, List.duplicate(first, count))
+    end)
   end
 
   # Each ridge drawn by the ribbon, the highest baseline first, so a lower ridge is drawn over
@@ -200,11 +251,75 @@ defmodule GigRidges.Ridgeline do
   end
 
   # A ridge drawn by the ribbon, or in pieces of one fill each under the gradient ridgelines' geoms.
-  defp draw_ridge(%__MODULE__{gradient: :none} = ridgeline, ridge, context),
+  # A ridge with its quantile lines, if any: its fill, then its lines, then its top line over
+  # them; or, outlined round under the closed density ridges' geom, its outlined fill, then its
+  # lines, as ggridges draws them.
+  defp draw_ridge(ridgeline, ridge, context) do
+    case line_rows(ridge) do
+      {_points, []} ->
+        body(ridgeline, ridge, context)
+
+      {points, lines} ->
+        lined(
+          ridgeline,
+          DataFrame.slice(ridge, points),
+          quantile_lines(ridgeline, ridge, lines),
+          context
+        )
+    end
+  end
+
+  defp body(%__MODULE__{gradient: :none} = ridgeline, ridge, context),
     do: Geom.draw_panel(ribbon(ridgeline), ridge, context)
 
-  defp draw_ridge(%__MODULE__{gradient: width}, ridge, context),
-    do: Gradient.draw(ridge, width, context)
+  defp body(%__MODULE__{gradient: width}, ridge, context),
+    do: Gradient.pieces(ridge, width, context) ++ top(ridge, context)
+
+  defp lined(%__MODULE__{outline: :full} = ridgeline, ridge, drawn_lines, context),
+    do: Geom.draw_panel(ribbon(ridgeline), ridge, context) ++ drawn_lines.(context)
+
+  defp lined(%__MODULE__{gradient: :none} = ridgeline, ridge, drawn_lines, context) do
+    unoutlined = DataFrame.put(ridge, :linewidth, List.duplicate(nil, DataFrame.row_count(ridge)))
+
+    Geom.draw_panel(ribbon(ridgeline), unoutlined, context) ++
+      drawn_lines.(context) ++ top(ridge, context)
+  end
+
+  defp lined(%__MODULE__{gradient: width}, ridge, drawn_lines, context),
+    do: Gradient.pieces(ridge, width, context) ++ drawn_lines.(context) ++ top(ridge, context)
+
+  # The quantile lines of a ridge, from its baseline up to it, drawn in its own look, or the
+  # `vline_*` options' where given, those of no place on the ridge left out.
+  defp quantile_lines(ridgeline, ridge, indices) do
+    fn context ->
+      lines = DataFrame.slice(ridge, indices)
+      tops = DataFrame.pull(lines, :ymax)
+      drawn = for {top, index} <- Enum.with_index(tops), is_number(top), do: index
+      count = length(drawn)
+
+      rows =
+        ridgeline
+        |> Map.from_struct()
+        |> LineStyle.vline_style()
+        |> Enum.reduce(DataFrame.slice(lines, drawn), fn {column, value}, styled ->
+          DataFrame.put(styled, column, List.duplicate(value, count))
+        end)
+
+      segments =
+        rows
+        |> DataFrame.put(:y, DataFrame.pull(rows, :ymin))
+        |> DataFrame.put(:xend, DataFrame.pull(rows, :x))
+        |> DataFrame.put(:yend, DataFrame.pull(rows, :ymax))
+
+      Geom.draw_panel(Geom.new(Geom.Segment, []), segments, context)
+    end
+  end
+
+  # A ridge's top, a line through each point's upper end in the ridge's own look.
+  defp top(ridge, context) do
+    line = DataFrame.put(ridge, :y, DataFrame.pull(ridge, :ymax))
+    Geom.draw_panel(Geom.new(Geom.Path, linejoin: :round), line, context)
+  end
 
   # Each point's height, times its `iscale` under the density ridges' geom; missing where either
   # is.
