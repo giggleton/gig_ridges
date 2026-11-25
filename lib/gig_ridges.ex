@@ -60,7 +60,8 @@ defmodule GigRidges do
   (`GigRidges.DensityRidgeline`) beside Giggly's options for the marks: `scale:`, 1.8 unless given
   or mapped, so neighbouring ridges overlap, and `rel_min_height:`, the share of the layer's
   greatest height below which a point is left out, in place of the ridgeline's `min_height:`. A
-  `scale` or `rel_min_height` mapped is each ridge's own.
+  `scale` or `rel_min_height` mapped is each ridge's own, and a `weight` mapped weighs each row's
+  share of its group's density.
   """
   @spec stat_density_ridges(Plot.t(), mapping() | keyword(), keyword()) :: Plot.t()
   def stat_density_ridges(plot, mapping_or_options \\ %{}, options \\ [])

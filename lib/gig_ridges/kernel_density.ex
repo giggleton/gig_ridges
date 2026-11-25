@@ -6,23 +6,25 @@ defmodule GigRidges.KernelDensity do
   # of two past that, reaching four bandwidths beyond the places either end; the grid padded with as
   # many zeros and convolved with the kernel through a Fourier transform, raised to 0 where
   # round-off leaves it below; and the curve read at the places by linear interpolation. Its
-  # values are R's to within round-off. Copied from Giggly's own estimate (MIT), the Gaussian
-  # kernel and unweighted rows alone, so the plugin depends on none of Giggly's internal
-  # statistics.
+  # values are R's to within round-off. Each value's share is the one given, its weight over its
+  # group's total, as R's `density()` takes weights summing to 1, a value outside the grid's
+  # reach keeping its share from the rest. Copied from Giggly's own estimate (MIT), the Gaussian
+  # kernel alone, so the plugin depends on none of Giggly's internal statistics.
 
   @least_points 512
   @reach 4
   @normal_height 0.398_942_280_401_432_7
 
   @doc false
-  @spec estimate([number()], float(), {number(), number()}, pos_integer()) :: [float()]
-  def estimate(values, bandwidth, {from, to}, count) do
+  @spec estimate([number()], [float()], float(), {number(), number()}, pos_integer()) ::
+          [float()]
+  def estimate(values, shares, bandwidth, {from, to}, count) do
     grid = grid_points(count)
     low = from - @reach * bandwidth
     high = to + @reach * bandwidth
     step = (high - low) / (grid - 1)
 
-    signal = spread(values, low, step, 2 * grid)
+    signal = spread(values, shares, low, step, 2 * grid)
     kernel = Enum.map(distances(grid, low, high), fn distance -> kernel(distance, bandwidth) end)
 
     estimates =
@@ -51,13 +53,13 @@ defmodule GigRidges.KernelDensity do
     2 ** exponent
   end
 
-  # Each value's share of the rows split between the grid points either side of it, by how near
-  # it is to each, summed in the values' order, the grid padded with zeros to `slots` points.
-  defp spread(values, low, step, slots) do
-    share = 1 / length(values)
-
+  # Each value's share split between the grid points either side of it, by how near it is to
+  # each, summed in the values' order, the grid padded with zeros to `slots` points.
+  defp spread(values, shares, low, step, slots) do
     totals =
-      Enum.reduce(values, %{}, fn value, totals ->
+      values
+      |> Enum.zip(shares)
+      |> Enum.reduce(%{}, fn {value, share}, totals ->
         place = (value - low) / step
         point = trunc(Float.floor(place / 1))
         fraction = place - point

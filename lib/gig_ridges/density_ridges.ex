@@ -16,6 +16,11 @@ defmodule GigRidges.DensityRidges do
   outside the places adds nothing to the density, though it counts among the group's values, as
   in R's `density()`.
 
+  A `weight` mapped weighs each row's share of its group's density, its weight over the group's
+  total, as R's `density(weights = )` takes weights summing to 1; the bandwidth is worked out from
+  the values unweighted. Where a group estimated has a weight missing or below 0, or weights
+  totalling 0, R's `density()` fails, and the panel has no density, as ggridges draws none of it.
+
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density scaled so the panel's greatest reaches the
   spacing between baselines, or the layer's greatest under `panel_scaling: false`, which the
@@ -93,7 +98,7 @@ defmodule GigRidges.DensityRidges do
   end
 
   @impl Giggly.Stat
-  def accepted_aesthetics(_stat), do: [:x, :y, :group]
+  def accepted_aesthetics(_stat), do: [:x, :y, :group, :weight]
 
   @impl Giggly.Stat
   def required_aesthetics(_stat), do: [:x, :y]
@@ -108,7 +113,15 @@ defmodule GigRidges.DensityRidges do
   def computed_variables(_stat), do: [:density, :ndensity, :height]
 
   @impl Giggly.Stat
-  def numeric_aesthetics(_stat), do: [x: "each group's density is estimated along it"]
+  def numeric_aesthetics(_stat),
+    do: [
+      x: "each group's density is estimated along it",
+      weight: "each group's density spreads each row's weight"
+    ]
+
+  # A weight is spread over the density's grid, so one mapped after the stat reaches nothing.
+  @impl Giggly.Stat
+  def dropped_aesthetics(_stat), do: [:weight]
 
   @doc false
   @spec validate_bandwidth(term()) :: {:ok, :nrd0 | float()} | {:error, String.t()}
@@ -134,7 +147,8 @@ defmodule GigRidges.DensityRidges do
   @impl Giggly.Stat
   def compute_layer(stat, frame, _axes) do
     finite = DataFrame.filter(frame, {:and, [{:is_finite, [:x]}, {:is_finite, [:y]}]})
-    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x])
+    carried = Carry.constant_columns(finite, DataFrame.names(finite) -- [:x, :weight])
+    weighed = if :weight in DataFrame.names(finite), do: [ws: {:list, [:weight]}], else: []
 
     groups =
       DataFrame.summarise(
@@ -142,7 +156,7 @@ defmodule GigRidges.DensityRidges do
         [:panel, :group],
         [
           {:xs, {:list, [:x]}}
-          | for(name <- carried -- [:panel, :group], do: {name, {:first, [name]}})
+          | weighed ++ for(name <- carried -- [:panel, :group], do: {name, {:first, [name]}})
         ]
       )
 
@@ -182,14 +196,34 @@ defmodule GigRidges.DensityRidges do
 
   # Each group's density at the panel's places, its bandwidth shared by the panel's groups: the
   # panel's rows, the group's index among them, the places and the densities there; a group of
-  # fewer than three values has none, so a panel of no larger group has no estimates.
+  # fewer than three values has none, so a panel of no larger group has no estimates. A panel
+  # where a group estimated has a weight missing or below 0, or weights totalling 0, has none
+  # either, as R's `density()` fails there and ggridges draws none of the panel.
   defp panel_estimates(stat, rows) do
     samples = DataFrame.pull(rows, :xs)
 
-    estimated =
-      for {values, index} <- Enum.with_index(samples), length(values) >= 3, do: {values, index}
+    weights =
+      if :ws in DataFrame.names(rows),
+        do: DataFrame.pull(rows, :ws),
+        else: List.duplicate(:unweighted, length(samples))
 
-    estimates(stat, samples, estimated, rows)
+    estimated =
+      for {{values, weighed}, index} <- samples |> Enum.zip(weights) |> Enum.with_index(),
+          length(values) >= 3,
+          do: {values, shares(values, weighed), index}
+
+    if Enum.any?(estimated, fn {_values, shares, _index} -> shares == :failed end),
+      do: [],
+      else: estimates(stat, samples, estimated, rows)
+  end
+
+  # Each of a group's values' share of its density: 1 over its values unweighted, else its weight
+  # over the group's total; `:failed` where a weight is missing or below 0, or they total 0.
+  defp shares(values, :unweighted), do: List.duplicate(1 / length(values), length(values))
+
+  defp shares(_values, weights) do
+    total = if Enum.all?(weights, &(is_number(&1) and &1 >= 0)), do: Enum.sum(weights), else: 0
+    if total > 0, do: Enum.map(weights, &(&1 / total)), else: :failed
   end
 
   defp estimates(_stat, _samples, [], _rows), do: []
@@ -209,8 +243,8 @@ defmodule GigRidges.DensityRidges do
   defp read(low, high, estimated, width, count, rows) do
     places = KernelDensity.places(low, high, count)
 
-    Enum.map(estimated, fn {values, index} ->
-      {rows, index, places, KernelDensity.estimate(values, width, {low, high}, count)}
+    Enum.map(estimated, fn {values, shares, index} ->
+      {rows, index, places, KernelDensity.estimate(values, shares, width, {low, high}, count)}
     end)
   end
 

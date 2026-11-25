@@ -484,6 +484,102 @@ defmodule GigRidgesTest do
       assert read.([from: 12], [:x]) == []
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(aes(weight = w), bandwidth = 1,
+    # from = -5, to = 5, n = 5)` over groups a and b, a weighed 1 to 6 and b 1 but 10 at its 0:
+    # each density R's `density(x, bw = 1, weights = w / sum(w))`, the group's own weights; a
+    # zero weight at a's -0.5 reads a as though the row were gone; and the joint bandwidth, 2.15,
+    # the same weighted or not, reading the same places.
+    test "weighs each group's density by its rows' weights, the bandwidth unweighted" do
+      weighed = fn weights, options ->
+        @spread
+        |> Map.put("w", weights)
+        |> Plot.new(%{x: :v, y: :g, weight: :w})
+        |> GigRidges.stat_density_ridges(options)
+        |> Giggly.layer_data()
+        |> by_group([:x, :density])
+      end
+
+      close? = fn read, golden ->
+        Enum.all?(Enum.zip_with(read, golden, &abs(&1 - &2)), &(&1 < 1.0e-12))
+      end
+
+      weights = [1, 2, 3, 4, 5, 6, 1, 1, 1, 10, 1, 1, 1]
+      [[_, a], [_, b]] = weighed.(weights, bandwidth: 1, from: -5, to: 5, n: 5)
+
+      assert close?.(a, [
+               8.4505047118059456e-6,
+               1.8475417785424206e-2,
+               3.3092611642087810e-1,
+               5.6198022741306114e-2,
+               4.2694997695806398e-5
+             ])
+
+      assert close?.(b, [
+               1.8509839275899817e-2,
+               3.3026930357241489e-2,
+               2.4981689013830774e-1,
+               3.3026930357241482e-2,
+               1.8509839275899831e-2
+             ])
+
+      [[_, gone] | _b] =
+        weighed.(List.replace_at(weights, 1, 0), bandwidth: 1, from: -5, to: 5, n: 5)
+
+      assert close?.(gone, [
+               7.6483978807405603e-6,
+               1.4732067003518817e-2,
+               3.2870893524466399e-1,
+               6.1646020743792905e-2,
+               4.7177776012724504e-5
+             ])
+
+      unweighted = @spread |> Plot.new(%{x: :v, y: :g}) |> GigRidges.stat_density_ridges()
+      places = unweighted |> Giggly.layer_data() |> by_group([:x])
+      assert Enum.map(weighed.(weights, []), &Enum.take(&1, 1)) == places
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, groups a and b weighed as above: a's weight at -0.5
+    # missing, or -1, or all of a's 0, fails the computation and draws nothing; faceted by group,
+    # it draws b's panel alone; and a third group c of two values, too few to estimate, a weight
+    # of it missing, draws a and b. Departure: Giggly, which cannot warn, draws as ggridges does
+    # without the warning. A weight of text is refused, naming the aesthetic.
+    test "draws no ridge in a panel whose estimated weights R's density() refuses" do
+      weights = [1, 2, 3, 4, 5, 6, 1, 1, 1, 10, 1, 1, 1]
+
+      rows = fn data, weights, faceted? ->
+        data
+        |> Map.put("w", weights)
+        |> Map.put("p", data["g"])
+        |> Plot.new(%{x: :v, y: :g, weight: :w})
+        |> GigRidges.stat_density_ridges(bandwidth: 1)
+        |> then(fn plot -> if faceted?, do: Plot.facet_wrap(plot, :p), else: plot end)
+        |> Giggly.layer_data()
+        |> DataFrame.row_count()
+      end
+
+      for bad <- [List.replace_at(weights, 1, nil), List.replace_at(weights, 1, -1)] do
+        assert rows.(@spread, bad, false) == 0
+        assert rows.(@spread, bad, true) == 512
+      end
+
+      assert rows.(@spread, List.duplicate(0, 6) ++ Enum.drop(weights, 6), false) == 0
+
+      small =
+        @spread
+        |> Map.update!("v", &(&1 ++ [4, 5]))
+        |> Map.update!("g", &(&1 ++ ["c", "c"]))
+
+      assert rows.(small, weights ++ [nil, 1], false) == 1024
+
+      assert_raise ArgumentError, ~r/maps :weight to "w", a :string column/, fn ->
+        @spread
+        |> Map.put("w", Enum.map(weights, &Integer.to_string/1))
+        |> Plot.new(%{x: :v, y: :g, weight: :w})
+        |> GigRidges.stat_density_ridges()
+        |> Giggly.layer_data()
+      end
+    end
+
     test "refuses a from not below its to, and n below 2 or not whole, naming the function" do
       plot = Plot.new(@spread, %{x: :v, y: :g})
 
