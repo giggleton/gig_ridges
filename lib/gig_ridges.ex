@@ -55,7 +55,8 @@ defmodule GigRidges do
   panel's greatest density reaches the next baseline at a `scale:` of 1.
 
   It needs `:x` and `:y`, `y` most often a discrete column whose values name the ridges, and takes
-  the stat's `bandwidth:` and `panel_scaling:` and the density ridges' geom's
+  the stat's `bandwidth:`, `panel_scaling:`, and `from:`, `to:` and `n:`, the span and number of
+  places each density is read at, and the density ridges' geom's
   (`GigRidges.DensityRidgeline`) beside Giggly's options for the marks: `scale:`, 1.8 unless given
   or mapped, so neighbouring ridges overlap, and `rel_min_height:`, the share of the layer's
   greatest height below which a point is left out, in place of the ridgeline's `min_height:`. A

@@ -40,7 +40,8 @@ GigDatasets.mpg()
 Each takes Giggly's options for the marks (`fill:`, `alpha:`, `colour:`, `linewidth:`,
 `linetype:`, `position:`) beside its own: `scale:` for the ridges, with `min_height:` for the
 ridgeline and `rel_min_height:`, a share of the layer's greatest height, for the density ridges,
-each of which may be mapped instead, and `bandwidth:` and `panel_scaling:` for the density.
+each of which may be mapped instead, and `bandwidth:`, `panel_scaling:`, `from:`, `to:` and `n:`
+for the density.
 
 ## Relationship to ggridges
 

@@ -11,6 +11,12 @@ defmodule GigRidgesTest do
     "h" => [0.2, 0.9, 0.3, 0.5, 0.4, 0.1]
   }
 
+  # A tight group a and a wide group b, whose densities ggridges' goldens are read over.
+  @spread %{
+    "v" => [-1, -0.5, 0, 0, 0.5, 1, -9, -6, -3, 0, 3, 6, 9],
+    "g" => List.duplicate("a", 6) ++ List.duplicate("b", 7)
+  }
+
   describe "geom_ridgeline/3" do
     test "reaches scale times each height above its baseline" do
       frame =
@@ -400,6 +406,88 @@ defmodule GigRidgesTest do
       end
     end
 
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, `stat_density_ridges(bandwidth = 1, from = -5,
+    # to = 5, n = 7)` over a tight group a (x -1, -0.5, 0, 0, 0.5, 1) and a wide group b (x -9, -6,
+    # -3, 0, 3, 6, 9): seven places from -5 to 5, each density R's `density(x, bw = 1, from = -5,
+    # to = 5, n = 7)`; and at `n = 1000`, past the 512 its grid starts from, a's 500th place reads
+    # 0.3309387554618286; moved by the estimate, never by Giggly.
+    test "reads each density at n places from from to to" do
+      frame =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_density_ridges(bandwidth: 1, from: -5, to: 5, n: 7)
+        |> Giggly.layer_data()
+
+      [a, b] = by_group(frame, [:x, :density])
+
+      places = [-5.0, -10 / 3, -5 / 3, 0.0, 5 / 3, 10 / 3, 5.0]
+
+      for [read_at, _densities] <- [a, b] do
+        assert Enum.all?(Enum.zip_with(read_at, places, &abs(&1 - &2)), &(&1 < 1.0e-12))
+      end
+
+      a_golden = [2.55727512038e-5, 6.13932727728e-3, 1.28344860885e-1, 3.30926116421e-1]
+      b_golden = [4.23062784328e-2, 5.57523951582e-2, 3.76573815680e-2, 5.82433062703e-2]
+
+      for {[_x, densities], golden} <- [{a, a_golden}, {b, b_golden}] do
+        mirrored = golden ++ (golden |> Enum.reverse() |> tl())
+        assert Enum.all?(Enum.zip_with(densities, mirrored, &abs(&1 - &2)), &(&1 < 1.0e-12))
+      end
+
+      [[many] | _b] =
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_density_ridges(bandwidth: 1, n: 1000)
+        |> Giggly.layer_data()
+        |> by_group([:density])
+
+      assert length(many) == 1000
+      assert abs(Enum.at(many, 499) - 0.3309387554618286) < 1.0e-12
+    end
+
+    # Golden: ggridges 0.5.7 on ggplot2 4.0.3, over groups a and b above at `bandwidth = 1`:
+    # `from = -5` alone reads 512 places from -5 to 12, three bandwidths past the greatest value,
+    # and `to = 5` alone from -12; `from = 8, to = 12, n = 3` reads b at 0.042282525236001067,
+    # 0.034586405217207537 and 0.000633539421405289, its values past four bandwidths below 8 adding
+    # nothing, and a, every value of it there, at 0; and `from = 20` alone, above where `to` falls,
+    # fails its computation and draws no ridge.
+    test "takes either end alone, and reads no ridge where the places would run backwards" do
+      read = fn options, columns ->
+        @spread
+        |> Plot.new(%{x: :v, y: :g})
+        |> GigRidges.stat_density_ridges([bandwidth: 1] ++ options)
+        |> Giggly.layer_data()
+        |> by_group(columns)
+      end
+
+      ends = fn [[places]] -> {hd(places), List.last(places), length(places)} end
+      assert ends.(read.([from: -5], [:x]) |> Enum.take(1)) == {-5.0, 12.0, 512}
+      assert ends.(read.([to: 5], [:x]) |> Enum.take(1)) == {-12.0, 5.0, 512}
+
+      [[a], [b]] = read.([from: 8, to: 12, n: 3], [:density])
+      assert a == [0.0, 0.0, 0.0]
+      golden = [0.042282525236001067, 0.034586405217207537, 0.000633539421405289]
+      assert Enum.all?(Enum.zip_with(b, golden, &abs(&1 - &2)), &(&1 < 1.0e-12))
+
+      assert read.([from: 20], [:x]) == []
+    end
+
+    test "refuses a from not below its to, and n below 2 or not whole, naming the function" do
+      plot = Plot.new(@spread, %{x: :v, y: :g})
+
+      for {from, to} <- [{5, -5}, {1, 1}] do
+        assert_raise ArgumentError,
+                     ~r/^GigRidges.stat_density_ridges\/3 takes a from: below its to:.*from: #{from}/,
+                     fn -> GigRidges.stat_density_ridges(plot, from: from, to: to) end
+      end
+
+      for {option, value} <- [n: 1, n: 7.5, from: :low] do
+        assert_raise NimbleOptions.ValidationError, ~r/:#{option}.*got: #{inspect(value)}/, fn ->
+          GigRidges.stat_density_ridges(plot, [{option, value}])
+        end
+      end
+    end
+
     test "takes a scale and rel_min_height given, every ridge's", %{plot: plot} do
       frame =
         plot
@@ -633,5 +721,13 @@ defmodule GigRidgesTest do
 
       assert length(Regex.scan(~r/<polygon /, svg)) >= 7
     end
+  end
+
+  # Each group's `columns`, the groups in order.
+  defp by_group(frame, columns) do
+    frame
+    |> DataFrame.split(:group)
+    |> Enum.sort()
+    |> Enum.map(fn {_group, rows} -> Enum.map(columns, &DataFrame.pull(rows, &1)) end)
   end
 end

@@ -9,8 +9,12 @@ defmodule GigRidges.DensityRidges do
   number of values to the power of minus one fifth. A group of fewer than three values has no
   density and is left out, though its values still count towards the joint bandwidth and the
   places. Each group's density is the normal kernel's, estimated as R's `density()` estimates one
-  and read at 512 places evenly across the panel's rows, reaching three bandwidths beyond them
-  (`GigRidges.KernelDensity`), so its values are R's to within round-off.
+  (`GigRidges.KernelDensity`), so its values are R's to within round-off, and read at `n:` places,
+  512 unless given, evenly from `from:` to `to:`, each end, where not given, three bandwidths
+  beyond the panel's rows; a panel whose places would run backwards, `from:` alone above where
+  `to:` falls or `to:` alone below `from:`, has none. A value further than four bandwidths
+  outside the places adds nothing to the density, though it counts among the group's values, as
+  in R's `density()`.
 
   Its rows are each group's places: `x`, the group's `y`, `density`, `ndensity`, the density over
   the group's greatest, and `height`, the density scaled so the panel's greatest reaches the
@@ -24,9 +28,15 @@ defmodule GigRidges.DensityRidges do
   alias Giggly.Stat.Carry
   alias GigRidges.KernelDensity
 
-  defstruct bandwidth: :nrd0, panel_scaling: true
+  defstruct bandwidth: :nrd0, panel_scaling: true, from: :none, to: :none, n: 512
 
-  @type t :: %__MODULE__{bandwidth: :nrd0 | float(), panel_scaling: boolean()}
+  @type t :: %__MODULE__{
+          bandwidth: :nrd0 | float(),
+          panel_scaling: boolean(),
+          from: :none | float(),
+          to: :none | float(),
+          n: pos_integer()
+        }
 
   @impl Giggly.Stat
   def options do
@@ -45,8 +55,41 @@ defmodule GigRidges.DensityRidges do
           "Whether each panel's ridges are scaled so its greatest density reaches the next " <>
             "baseline (`true`), or the layer's ridges together, so a panel of lower densities " <>
             "draws lower ridges (`false`)."
+      ],
+      from: [
+        type: {:custom, __MODULE__, :validate_end, []},
+        default: :none,
+        doc:
+          "The least place each group's density is read at, a number; three bandwidths below " <>
+            "the panel's least value where none is given."
+      ],
+      to: [
+        type: {:custom, __MODULE__, :validate_end, []},
+        default: :none,
+        doc:
+          "The greatest place each group's density is read at, a number above `from:`; three " <>
+            "bandwidths above the panel's greatest value where none is given."
+      ],
+      n: [
+        type: {:custom, __MODULE__, :validate_count, []},
+        default: 512,
+        doc:
+          "How many places each group's density is read at, evenly spaced, a whole number of " <>
+            "2 or more."
       ]
     ]
+  end
+
+  # `from:` and `to:` given together, the least place above or at the greatest.
+  @impl Giggly.Stat
+  def option_conflicts(options) do
+    case {Keyword.get(options, :from, :none), Keyword.get(options, :to, :none)} do
+      {from, to} when is_float(from) and is_float(to) and from >= to ->
+        ["takes a from: below its to:, got from: #{from} and to: #{to}"]
+
+      _ends ->
+        []
+    end
   end
 
   @impl Giggly.Stat
@@ -75,7 +118,18 @@ defmodule GigRidges.DensityRidges do
   def validate_bandwidth(other),
     do: {:error, "expected a number above 0 or :nrd0, got: #{inspect(other)}"}
 
-  @places 512
+  @doc false
+  @spec validate_end(term()) :: {:ok, :none | float()} | {:error, String.t()}
+  def validate_end(:none), do: {:ok, :none}
+  def validate_end(place) when is_number(place), do: {:ok, place / 1}
+  def validate_end(other), do: {:error, "expected a number, got: #{inspect(other)}"}
+
+  @doc false
+  @spec validate_count(term()) :: {:ok, pos_integer()} | {:error, String.t()}
+  def validate_count(count) when is_integer(count) and count >= 2, do: {:ok, count}
+
+  def validate_count(other),
+    do: {:error, "expected a whole number of 2 or more, got: #{inspect(other)}"}
 
   @impl Giggly.Stat
   def compute_layer(stat, frame, _axes) do
@@ -143,14 +197,26 @@ defmodule GigRidges.DensityRidges do
   defp estimates(stat, samples, estimated, rows) do
     pooled = Enum.concat(samples)
     width = bandwidth(stat.bandwidth, samples)
-    span = {Enum.min(pooled) - 3 * width, Enum.max(pooled) + 3 * width}
-    {low, high} = span
-    places = KernelDensity.places(low, high, @places)
+    low = place_or(stat.from, Enum.min(pooled) - 3 * width)
+    high = place_or(stat.to, Enum.max(pooled) + 3 * width)
+    read(low, high, estimated, width, stat.n, rows)
+  end
+
+  # Each estimated group's density at `count` places from `low` to `high`; none where the places
+  # would run backwards, one end given beyond the other's default, as ggridges draws none there.
+  defp read(low, high, _estimated, _width, _count, _rows) when low >= high, do: []
+
+  defp read(low, high, estimated, width, count, rows) do
+    places = KernelDensity.places(low, high, count)
 
     Enum.map(estimated, fn {values, index} ->
-      {rows, index, places, KernelDensity.estimate(values, width, span, @places)}
+      {rows, index, places, KernelDensity.estimate(values, width, {low, high}, count)}
     end)
   end
+
+  # The end of the places given, else the one three bandwidths beyond the panel's values.
+  defp place_or(:none, beyond), do: beyond
+  defp place_or(given, _beyond), do: given
 
   # A group's rows: its carried columns repeated once per place, beside the columns computed.
   defp group_frame(rows, indices, carried, computed) do
